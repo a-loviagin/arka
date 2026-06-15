@@ -1,0 +1,38 @@
+name: CI
+
+# The Linux job is the load-bearing one (platform-strategy.md §2): it CI-enforces that
+# MotionKernel stays Apple-framework-free and that the evaluate-stage + undo conformance suite
+# passes on a non-Apple platform — keeping a future server/SwiftWasm port a port, not a rewrite.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  linux:
+    name: Linux (swift test)
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard against Apple-only imports
+        run: |
+          if grep -rnE 'import (AppKit|Metal|MetalKit|CoreText|CoreGraphics|AVFoundation|UIKit|Combine|simd)' Sources/; then
+            echo "::error::MotionKernel must stay Apple-framework-free (platform-strategy.md §2)"
+            exit 1
+          fi
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+
+  macos:
+    name: macOS (swift test)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test

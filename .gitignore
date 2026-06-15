@@ -1,0 +1,11 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/
+*.xcodeproj
+.netrc
+
+# Local spec working copies (source of truth lives elsewhere)
+/specs/
