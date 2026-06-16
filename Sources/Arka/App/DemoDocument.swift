@@ -77,6 +77,29 @@ enum DemoDocument {
             )
         ))
 
+        // Headline text: fades + slides up, centered above the cards.
+        layers.append(Layer(
+            id: "layer_headline", name: "Headline", sortKey: "d0",
+            content: .text(TextContent(string: "Ship it in motion",
+                                       fontFamily: "Helvetica Neue Bold",
+                                       fontSize: .static(120),
+                                       tracking: .static(2),
+                                       fillColor: .static(.white),
+                                       alignment: .center)),
+            transform: Transform(
+                anchor: .static(Vec2(0.5, 0.5)),
+                position: .animated([Track(keyframes: [
+                    Keyframe(t: 0.6, v: Vec2(960, 240), interp: .bezier,
+                             easeOut: ControlPoint(0.2, 0)),
+                    Keyframe(t: 1.4, v: Vec2(960, 180), easeIn: ControlPoint(0.4, 1)),
+                ])]),
+                opacity: .animated([Track(keyframes: [
+                    Keyframe(t: 0.6, v: 0.0, interp: .linear),
+                    Keyframe(t: 1.2, v: 1.0),
+                ])])
+            )
+        ))
+
         let comp = Composition(id: "comp_main", name: "Demo", size: Vec2(W, H), fps: 60,
                                duration: 3.0, backgroundColor: ColorValue(hex: "#0E0E14")!,
                                layers: layers)

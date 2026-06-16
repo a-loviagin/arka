@@ -11,6 +11,7 @@ import MotionKernel
 /// the scene, and draws. Scrubbing later uses this exact path (render at t), so it feels identical.
 final class CanvasNSView: NSView {
     private var renderer: MetalRenderer?
+    private var textEngine: TextEngine?
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
     private var displayLink: CADisplayLink?
 
@@ -28,6 +29,7 @@ final class CanvasNSView: NSView {
             metalLayer.framebufferOnly = true
             metalLayer.isOpaque = true
             renderer = try? MetalRenderer(device: device)
+            textEngine = TextEngine(device: device)
         }
     }
 
@@ -72,7 +74,8 @@ final class CanvasNSView: NSView {
         guard let renderer, let comp = document.mainComposition,
               let drawable = metalLayer.nextDrawable() else { return }
         let t = playback.currentTime
-        let items = RenderTreeBuilder(document: document).build(compId: comp.id, at: t)
+        let items = RenderTreeBuilder(document: document, textEngine: textEngine)
+            .build(compId: comp.id, at: t)
         let vp = SIMD2<Float>(Float(metalLayer.drawableSize.width),
                               Float(metalLayer.drawableSize.height))
         let bg = comp.backgroundColor

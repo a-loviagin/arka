@@ -1,16 +1,39 @@
 #if os(macOS)
 import Foundation
 import simd
+import Metal
 import MotionKernel
 
 /// The flat, immutable draw unit the GPU side consumes (render-engine.md §1). The renderer knows
 /// nothing about keyframes, easing, or the document — only resolved geometry, style, and a world
 /// matrix. This is the RenderTree boundary: `simd` and Metal live here, never in MotionKernel.
 struct RenderItem {
-    /// Maps layer-local space (origin at the layer's top-left, spanning `size`) to comp space.
+    /// Maps layer-local space (origin at the layer's top-left) to comp space.
     var world: simd_float3x3
     var opacity: Float
-    var shape: ResolvedShape
+    var content: RenderContent
+}
+
+/// What a RenderItem draws. SDF shapes and textured runs (glyphs now, images next) share the
+/// ordered draw walk so z-order is always respected.
+enum RenderContent {
+    case shape(ResolvedShape)
+    case glyphRun(GlyphRun)
+}
+
+/// A laid-out run of glyphs sharing one atlas texture, tinted by the text's fill color. Positions
+/// are in text-local space (y-down; origin at the layer's top-left).
+struct GlyphRun {
+    var atlas: MTLTexture
+    var fill: SIMD4<Float>
+    var glyphs: [GlyphQuad]
+}
+
+struct GlyphQuad {
+    var localOrigin: SIMD2<Float>   // top-left in text-local space
+    var localSize: SIMD2<Float>
+    var uvOrigin: SIMD2<Float>      // normalized atlas coords
+    var uvSize: SIMD2<Float>
 }
 
 enum ShapeKind: UInt32 {

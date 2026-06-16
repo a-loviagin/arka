@@ -11,6 +11,7 @@ import MotionKernel
 /// are skipped until their render paths land (render-engine.md §8 step 4+).
 struct RenderTreeBuilder {
     let document: MotionDocument
+    var textEngine: TextEngine?
 
     func build(compId: EntityID, at t: TimeInterval) -> [RenderItem] {
         guard let comp = document.composition(compId) else { return [] }
@@ -23,11 +24,24 @@ struct RenderTreeBuilder {
 
         for ev in evaluated where ev.active && ev.opacity > 0.001 {
             guard let layer = byId[ev.layerId] else { continue }
-            guard case .shape(let shape) = layer.content else { continue }
-            guard let resolved = resolveShape(shape, at: t) else { continue }
-            items.append(RenderItem(world: simd_float3x3(ev.world),
-                                    opacity: Float(ev.opacity),
-                                    shape: resolved))
+            let world = simd_float3x3(ev.world)
+            let opacity = Float(ev.opacity)
+
+            switch layer.content {
+            case .shape(let shape):
+                guard let resolved = resolveShape(shape, at: t) else { continue }
+                items.append(RenderItem(world: world, opacity: opacity, content: .shape(resolved)))
+            case .text(let text):
+                guard let engine = textEngine else { continue }
+                let fontSize = text.fontSize.resolve(at: t)
+                let tracking = text.tracking?.resolve(at: t) ?? 0
+                let fill = SIMD4<Float>(text.fillColor.resolve(at: t))
+                guard let run = engine.run(for: text, fontSize: fontSize,
+                                           tracking: tracking, fill: fill) else { continue }
+                items.append(RenderItem(world: world, opacity: opacity, content: .glyphRun(run)))
+            default:
+                continue // image/video/precomp render paths land next
+            }
         }
         return items
     }
