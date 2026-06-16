@@ -34,11 +34,13 @@ public struct RenderTreeBuilder {
             guard let layer = byId[ev.layerId] else { continue }
             let world = simd_float3x3(ev.world)
             let opacity = Float(ev.opacity)
+            let effects = resolveEffects(layer.effects, at: t)
 
             switch layer.content {
             case .shape(let shape):
                 guard let resolved = resolveShape(shape, at: t) else { continue }
-                items.append(RenderItem(world: world, opacity: opacity, content: .shape(resolved)))
+                items.append(RenderItem(world: world, opacity: opacity,
+                                        content: .shape(resolved), effects: effects))
             case .text(let text):
                 guard let engine = textEngine else { continue }
                 let fontSize = text.fontSize.resolve(at: t)
@@ -46,7 +48,8 @@ public struct RenderTreeBuilder {
                 let fill = SIMD4<Float>(text.fillColor.resolve(at: t))
                 guard let run = engine.run(for: text, fontSize: fontSize,
                                            tracking: tracking, fill: fill) else { continue }
-                items.append(RenderItem(world: world, opacity: opacity, content: .glyphRun(run)))
+                items.append(RenderItem(world: world, opacity: opacity,
+                                        content: .glyphRun(run), effects: effects))
             case .image(let image):
                 guard let texture = textures?.texture(forAssetId: image.assetId) else { continue }
                 // Layer-local extents = the asset's pixel size (kernel reports the same for anchor).
@@ -55,12 +58,46 @@ public struct RenderTreeBuilder {
                 items.append(RenderItem(world: world, opacity: opacity,
                                         content: .image(ImageQuad(
                                             texture: texture,
-                                            size: SIMD2<Float>(Float(size.x), Float(size.y))))))
+                                            size: SIMD2<Float>(Float(size.x), Float(size.y)))),
+                                        effects: effects))
             default:
                 continue // video/precomp render paths land next
             }
         }
         return items
+    }
+
+    private func resolveEffects(_ effects: [Effect], at t: TimeInterval) -> [ResolvedEffect] {
+        effects.compactMap { fx -> ResolvedEffect? in
+            guard fx.enabled else { return nil }
+            switch fx.type {
+            case "blur":
+                let r = scalar(fx, "radius", at: t) ?? 0
+                return r > 0.01 ? .blur(radius: Float(r)) : nil
+            case "shadow":
+                let off = vec2(fx, "offset", at: t) ?? Vec2(0, 6)
+                let r = scalar(fx, "radius", at: t) ?? 8
+                let c = color(fx, "color", at: t) ?? .black
+                let op = scalar(fx, "opacity", at: t) ?? 0.5
+                return .shadow(offset: SIMD2<Float>(Float(off.x), Float(off.y)),
+                               radius: Float(r), color: SIMD4<Float>(c), opacity: Float(op))
+            default:
+                return nil // unknown effect types are skipped (forward-compatible)
+            }
+        }
+    }
+
+    private func scalar(_ fx: Effect, _ key: String, at t: TimeInterval) -> Double? {
+        if case .scalar(let v)? = fx.params[key] { return v.resolve(at: t) }
+        return nil
+    }
+    private func vec2(_ fx: Effect, _ key: String, at t: TimeInterval) -> Vec2? {
+        if case .vec2(let v)? = fx.params[key] { return v.resolve(at: t) }
+        return nil
+    }
+    private func color(_ fx: Effect, _ key: String, at t: TimeInterval) -> ColorValue? {
+        if case .color(let v)? = fx.params[key] { return v.resolve(at: t) }
+        return nil
     }
 
     private func resolveShape(_ shape: ShapeContent, at t: TimeInterval) -> ResolvedShape? {

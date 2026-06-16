@@ -149,6 +149,60 @@ enum ShaderSource {
         float4 t = tex.sample(samp, in.uv);
         return t * inst.opacity; // texture is pre-multiplied; scaling preserves that
     }
+
+    // ---- Effects (intermediate passes) -----------------------------------------------------
+    struct FSOut { float4 position [[position]]; float2 uv; };
+
+    struct BlurParams { float2 texelStep; float sigma; int taps; };
+    struct CompositeParams { float2 offsetNDC; float4 tint; float opacity; uint mode; };
+
+    // Fullscreen triangle-strip quad. uv flips y so texel (0,0) = top-left (matches how content is
+    // rendered into the intermediate).
+    vertex FSOut fullscreen_vertex(uint vid [[vertex_id]]) {
+        float2 c = float2(float(vid & 1u), float((vid >> 1) & 1u));
+        FSOut o;
+        o.position = float4(c * 2.0 - 1.0, 0.0, 1.0);
+        o.uv = float2(c.x, 1.0 - c.y);
+        return o;
+    }
+
+    // Separable Gaussian (blur in pre-multiplied space → no dark halos). Run once per axis.
+    fragment float4 blur_fragment(FSOut in [[stage_in]],
+                                  texture2d<float> tex [[texture(0)]],
+                                  sampler samp [[sampler(0)]],
+                                  constant BlurParams &p [[buffer(0)]]) {
+        float4 sum = float4(0.0);
+        float wsum = 0.0;
+        for (int i = -p.taps; i <= p.taps; i++) {
+            float w = exp(-float(i * i) / (2.0 * p.sigma * p.sigma));
+            sum += tex.sample(samp, in.uv + float(i) * p.texelStep) * w;
+            wsum += w;
+        }
+        return sum / max(wsum, 1e-5);
+    }
+
+    // Composite an intermediate into the target. mode 0 = normal (image over), mode 1 = shadow
+    // (recolor by the source alpha with the shadow tint). Offset is applied in NDC.
+    vertex FSOut composite_vertex(uint vid [[vertex_id]],
+                                  constant CompositeParams &p [[buffer(0)]]) {
+        float2 c = float2(float(vid & 1u), float((vid >> 1) & 1u));
+        FSOut o;
+        o.position = float4(c * 2.0 - 1.0 + p.offsetNDC, 0.0, 1.0);
+        o.uv = float2(c.x, 1.0 - c.y);
+        return o;
+    }
+
+    fragment float4 composite_fragment(FSOut in [[stage_in]],
+                                       texture2d<float> tex [[texture(0)]],
+                                       sampler samp [[sampler(0)]],
+                                       constant CompositeParams &p [[buffer(0)]]) {
+        float4 c = tex.sample(samp, in.uv); // pre-multiplied
+        if (p.mode == 1u) {
+            float a = c.a * p.opacity;
+            return float4(p.tint.rgb * a, a);
+        }
+        return c * p.opacity;
+    }
     """
 }
 #endif

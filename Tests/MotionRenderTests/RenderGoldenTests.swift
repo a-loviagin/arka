@@ -179,6 +179,58 @@ final class RenderGoldenTests: XCTestCase {
         return ctx.makeImage()!
     }
 
+    // MARK: Effects
+
+    private func shapeLayer(_ id: String, at pos: Vec2, size: Vec2, fill: ColorValue,
+                            effects: [Effect]) -> Layer {
+        Layer(id: EntityID(id), name: id, sortKey: "a0",
+              content: .shape(ShapeContent(geometry: .rect, size: .static(size), fillColor: .static(fill))),
+              transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(pos)),
+              effects: effects)
+    }
+
+    func testBlurSpreadsCoverageBeyondSharpBounds() {
+        // A white rect spans comp 30…70. A pixel 4px outside the right edge is bg when sharp,
+        // but picks up coverage once blurred.
+        let sharp = doc(size: 100, bg: .black,
+                        layers: [shapeLayer("r", at: Vec2(50, 50), size: Vec2(40, 40), fill: .white, effects: [])])
+        let blur = Effect(id: "fx", type: "blur", params: ["radius": .scalar(.static(8))])
+        let blurred = doc(size: 100, bg: .black,
+                          layers: [shapeLayer("r", at: Vec2(50, 50), size: Vec2(40, 40), fill: .white, effects: [blur])])
+
+        let sharpImg = render(sharp, at: 0, size: 100)
+        let blurImg = render(blurred, at: 0, size: 100)
+        XCTAssertLessThan(sharpImg.pixel(74, 50).r, 10, "sharp rect should not reach x=74")
+        XCTAssertGreaterThan(blurImg.pixel(74, 50).r, 20, "blur should spread coverage past the edge")
+        // Center stays essentially full.
+        XCTAssertGreaterThan(blurImg.pixel(50, 50).r, 180, "blurred center still bright")
+    }
+
+    func testShadowCastsOffsetTintedPixels() {
+        // White rect (25…55) with a red shadow offset (15,15). A point at (65,65) is outside the
+        // rect but inside the shadow → reddish; without the shadow it's background.
+        let shadow = Effect(id: "fx", type: "shadow", params: [
+            "offset": .vec2(.static(Vec2(15, 15))),
+            "radius": .scalar(.static(6)),
+            "color": .color(.static(ColorValue(hex: "#FF0000")!)),
+            "opacity": .scalar(.static(0.9)),
+        ])
+        let withShadow = doc(size: 100, bg: .black,
+                             layers: [shapeLayer("r", at: Vec2(40, 40), size: Vec2(30, 30), fill: .white, effects: [shadow])])
+        let without = doc(size: 100, bg: .black,
+                          layers: [shapeLayer("r", at: Vec2(40, 40), size: Vec2(30, 30), fill: .white, effects: [])])
+
+        let s = render(withShadow, at: 0, size: 100)
+        let n = render(without, at: 0, size: 100)
+        XCTAssertLessThan(n.pixel(65, 65).r, 10, "no content at (65,65) without a shadow")
+        let p = s.pixel(65, 65)
+        XCTAssertGreaterThan(p.r, 30, "shadow should tint (65,65) red")
+        XCTAssertLessThan(p.b, p.r, "shadow tint is red, not white")
+        // The sharp rect itself is still white on top.
+        XCTAssertGreaterThan(s.pixel(40, 40).r, 180, "rect content survives over its shadow")
+        XCTAssertGreaterThan(s.pixel(40, 40).b, 180, "rect is white, shadow only behind it")
+    }
+
     // MARK: IO + golden pin
 
     func testPNGRoundTrip() throws {

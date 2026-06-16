@@ -12,6 +12,15 @@ public struct RenderItem {
     var world: simd_float3x3
     var opacity: Float
     var content: RenderContent
+    /// Effects applied to this layer's rasterized result, in order. A non-empty list forces the
+    /// layer through an intermediate texture (render-engine.md §3).
+    var effects: [ResolvedEffect] = []
+}
+
+/// An effect resolved to concrete values at one time (render-engine.md §3, properties §1 Tier 2).
+enum ResolvedEffect {
+    case blur(radius: Float)
+    case shadow(offset: SIMD2<Float>, radius: Float, color: SIMD4<Float>, opacity: Float)
 }
 
 /// What a RenderItem draws. SDF shapes and textured runs (glyphs now, images next) share the

@@ -56,7 +56,14 @@ enum DemoDocument {
                         Keyframe(t: start, v: 0.0, interp: .linear),
                         Keyframe(t: start + 0.25, v: 1.0),
                     ])])
-                )
+                ),
+                // Soft drop shadow grounds each card (multi-pass effect).
+                effects: [Effect(id: EntityID("fx_card\(i)"), type: "shadow", params: [
+                    "offset": .vec2(.static(Vec2(0, 18))),
+                    "radius": .scalar(.static(28)),
+                    "color": .color(.static(.black)),
+                    "opacity": .scalar(.static(0.45)),
+                ])]
             ))
         }
 

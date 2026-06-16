@@ -10,6 +10,13 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 5 — intermediates & effects (done).** The multi-pass compositing machinery
+(render-engine.md §3): a size-bucketed `IntermediatePool`, layers with effects rendered into
+intermediate textures, then composited back in z-order. **Gaussian blur** (separable two-pass,
+blurred in premultiplied space) and **drop shadow** (blurred alpha → tint → offset behind the
+sharp content). Verified structurally (blur spreads coverage past sharp bounds; shadow casts
+offset tinted pixels) and visually. The demo's cards now cast soft shadows. 52 tests.
+
 **Phase 4 — image layers (done).** A `TextureCache` (ImageIO/CGImage → premultiplied rgba8,
 keyed by `assetId`) plus an image fragment that reuses the textured-quad path. The RenderTree
 builder resolves image layers through a `TextureProvider`. Shapes, text, and images now composite
