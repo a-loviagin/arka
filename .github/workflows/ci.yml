@@ -16,14 +16,14 @@ jobs:
     container: swift:6.0
     steps:
       - uses: actions/checkout@v4
-      - name: Guard against Apple-only imports
+      - name: Guard MotionKernel against Apple-only imports
         run: |
-          if grep -rnE 'import (AppKit|Metal|MetalKit|CoreText|CoreGraphics|AVFoundation|UIKit|Combine|simd)' Sources/; then
+          if grep -rnE 'import (AppKit|Metal|MetalKit|CoreText|CoreGraphics|AVFoundation|UIKit|Combine|simd)' Sources/MotionKernel/; then
             echo "::error::MotionKernel must stay Apple-framework-free (platform-strategy.md §2)"
             exit 1
           fi
-      - name: Build
-        run: swift build
+      - name: Build kernel (only the portable target on Linux)
+        run: swift build --target MotionKernel
       - name: Test
         run: swift test
 

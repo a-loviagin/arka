@@ -10,9 +10,22 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
-**Phase 1 — `MotionKernel` (in progress).** The pure-Swift, Apple-framework-free core that
+**Phase 2 — first moving pixels (done).** A macOS app target (`Arka`) renders the kernel's
+evaluated scene with Metal:
+
+- **RenderTree boundary** — `RenderTreeBuilder` resolves the kernel's `SceneEvaluator` output into
+  flat `RenderItem`s (world matrix, opacity, resolved shape style). `simd`/Metal live only here.
+- **SDF renderer** — instanced analytic SDF shapes (rect/rounded-rect/ellipse) with scale-aware
+  antialiasing, pre-multiplied blending, drawn into a `CAMetalLayer`.
+- **App shell** — SwiftUI chrome + AppKit/Metal canvas, a media-clock `PlaybackController`
+  (`CADisplayLink`-driven, anchored time — no wall-clock drift), play/scrub/loop transport, and a
+  built-in demo comp (springy cards, a morphing pill, a dot on a curved motion path).
+
+Run it: `swift run Arka`.
+
+**Phase 1 — `MotionKernel` (done).** The pure-Swift, Apple-framework-free core that
 everything else depends on. This is the "first build step" the specs mandate before any pixel
-exists. Done so far:
+exists:
 
 - **Schema model** — `MotionDocument` → `Composition` → `Layer` → `Transform`/content, the
   `AnimatableValue`/`Track`/`Keyframe` abstraction, all `Codable` with omitted-defaults.
