@@ -11,7 +11,7 @@ import MotionKernel
 ///
 /// Layout geometry is cached by (string, font, size, tracking, alignment); fill color is applied
 /// at build time and never invalidates layout — animating color is free, animating tracking isn't.
-final class TextEngine {
+public final class TextEngine {
     private let atlas: GlyphAtlas
     private var layoutCache: [LayoutKey: [GlyphQuad]] = [:]
 
@@ -23,7 +23,7 @@ final class TextEngine {
         let alignment: Int
     }
 
-    init?(device: MTLDevice) {
+    public init?(device: MTLDevice) {
         guard let atlas = GlyphAtlas(device: device) else { return nil }
         self.atlas = atlas
     }

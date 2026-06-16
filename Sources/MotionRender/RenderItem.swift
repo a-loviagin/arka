@@ -7,7 +7,7 @@ import MotionKernel
 /// The flat, immutable draw unit the GPU side consumes (render-engine.md §1). The renderer knows
 /// nothing about keyframes, easing, or the document — only resolved geometry, style, and a world
 /// matrix. This is the RenderTree boundary: `simd` and Metal live here, never in MotionKernel.
-struct RenderItem {
+public struct RenderItem {
     /// Maps layer-local space (origin at the layer's top-left) to comp space.
     var world: simd_float3x3
     var opacity: Float

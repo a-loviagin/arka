@@ -10,8 +10,16 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 3 — renderer conformance (done).** Render code is now its own `MotionRender` library
+target (macOS-only, behind the RenderTree boundary), with an offscreen render-to-texture + pixel
+readback path (`PixelImage`, ImageIO PNG). The conformance suite (render-engine.md §7) does
+**structural pixel assertions** that self-validate correctness — background = bg color, a filled
+rect's center = its fill, 50%-opacity composites to half-gray, an SDF ellipse excludes its
+bounding-box corners, an animated shape moves between sampled times, and text lights up real glyph
+coverage — plus a golden-PNG pin with perceptual tolerance. 49 tests total.
+
 **Phase 2 — first moving pixels (done).** A macOS app target (`Arka`) renders the kernel's
-evaluated scene with Metal:
+evaluated scene with Metal (now via the `MotionRender` target):
 
 - **RenderTree boundary** — `RenderTreeBuilder` resolves the kernel's `SceneEvaluator` output into
   flat `RenderItem`s (world matrix, opacity, resolved shape style). `simd`/Metal live only here.

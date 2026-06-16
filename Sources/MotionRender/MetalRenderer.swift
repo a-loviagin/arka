@@ -33,8 +33,8 @@ struct GlyphInstance {
 ///
 /// v1 simplifications vs. spec: draws into an sRGB drawable rather than fp16 linear targets + EDR
 /// (render-engine.md §4) — correct-looking pixels now; the linear pipeline is a later upgrade.
-final class MetalRenderer {
-    let device: MTLDevice
+public final class MetalRenderer {
+    public let device: MTLDevice
     private let queue: MTLCommandQueue
     private let shapePipeline: MTLRenderPipelineState
     private let glyphPipeline: MTLRenderPipelineState
@@ -43,9 +43,9 @@ final class MetalRenderer {
     private var shapeBuffer = GrowableBuffer<InstanceUniform>()
     private var glyphBuffer = GrowableBuffer<GlyphInstance>()
 
-    enum SetupError: Error { case noQueue, noLibrary }
+    public enum SetupError: Error { case noQueue, noLibrary }
 
-    init(device: MTLDevice) throws {
+    public init(device: MTLDevice) throws {
         self.device = device
         guard let queue = device.makeCommandQueue() else { throw SetupError.noQueue }
         self.queue = queue
@@ -99,13 +99,50 @@ final class MetalRenderer {
         case glyphs(base: Int, count: Int, texture: MTLTexture)
     }
 
-    /// Draw a RenderTree into a drawable. `clear` is sRGB-encoded rgba (the comp background).
-    func draw(items: [RenderItem], compSize: SIMD2<Float>, viewport: SIMD2<Float>,
-              clear: SIMD4<Double>, to drawable: CAMetalDrawable) {
+    /// Draw a RenderTree into a drawable (the live preview path). `clear` is sRGB-encoded rgba.
+    public func draw(items: [RenderItem], compSize: SIMD2<Float>, viewport: SIMD2<Float>,
+                     clear: SIMD4<Double>, to drawable: CAMetalDrawable) {
         let proj = projection(compSize: compSize, viewport: viewport)
+        let ops = prepare(items: items, proj: proj)
+        guard let cmd = queue.makeCommandBuffer() else { return }
+        encode(ops, into: drawable.texture, clear: clear, cmd: cmd)
+        cmd.present(drawable)
+        cmd.commit()
+    }
 
-        // Flatten the ordered RenderTree into two instance arrays + an ordered op list, batching
-        // consecutive shapes into one instanced draw and flushing on each glyph run.
+    /// Render a RenderTree into an offscreen texture and read the pixels back (render-engine.md §5
+    /// export path / §7 golden frames). 1:1 mapping when `pixelSize == compSize`. Same evaluate +
+    /// encode objects as the preview path — that equivalence is the product's correctness promise.
+    public func renderToImage(items: [RenderItem], compSize: SIMD2<Float>,
+                              pixelSize: (width: Int, height: Int),
+                              clear: SIMD4<Double>) -> PixelImage? {
+        let vp = SIMD2<Float>(Float(pixelSize.width), Float(pixelSize.height))
+        let proj = projection(compSize: compSize, viewport: vp)
+        let ops = prepare(items: items, proj: proj)
+
+        let desc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm, width: pixelSize.width, height: pixelSize.height, mipmapped: false)
+        desc.usage = [.renderTarget, .shaderRead]
+        desc.storageMode = .shared // Apple Silicon: CPU-readable without a blit
+        guard let texture = device.makeTexture(descriptor: desc),
+              let cmd = queue.makeCommandBuffer() else { return nil }
+
+        encode(ops, into: texture, clear: clear, cmd: cmd)
+        cmd.commit()
+        cmd.waitUntilCompleted()
+
+        var bgra = [UInt8](repeating: 0, count: pixelSize.width * pixelSize.height * 4)
+        bgra.withUnsafeMutableBytes { ptr in
+            texture.getBytes(ptr.baseAddress!, bytesPerRow: pixelSize.width * 4,
+                             from: MTLRegionMake2D(0, 0, pixelSize.width, pixelSize.height),
+                             mipmapLevel: 0)
+        }
+        return PixelImage(width: pixelSize.width, height: pixelSize.height, bgra: bgra)
+    }
+
+    /// Flatten the ordered RenderTree into instance buffers + an ordered op list, batching
+    /// consecutive shapes into one instanced draw and flushing on each glyph run (preserves z-order).
+    private func prepare(items: [RenderItem], proj: simd_float3x3) -> [DrawOp] {
         var shapes: [InstanceUniform] = []
         var glyphs: [GlyphInstance] = []
         var ops: [DrawOp] = []
@@ -147,17 +184,18 @@ final class MetalRenderer {
 
         shapeBuffer.upload(shapes, device: device)
         glyphBuffer.upload(glyphs, device: device)
+        return ops
+    }
 
+    private func encode(_ ops: [DrawOp], into target: MTLTexture,
+                        clear: SIMD4<Double>, cmd: MTLCommandBuffer) {
         let pass = MTLRenderPassDescriptor()
-        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].texture = target
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: clear.x, green: clear.y,
                                                             blue: clear.z, alpha: clear.w)
-
-        guard let cmd = queue.makeCommandBuffer(),
-              let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
-
+        guard let enc = cmd.makeRenderCommandEncoder(descriptor: pass) else { return }
         for op in ops {
             switch op {
             case .shapes(let base, let count):
@@ -183,8 +221,6 @@ final class MetalRenderer {
             }
         }
         enc.endEncoding()
-        cmd.present(drawable)
-        cmd.commit()
     }
 }
 

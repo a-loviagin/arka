@@ -9,11 +9,16 @@ import MotionKernel
 ///
 /// v1 draws Tier-1 parametric shapes (rect/rounded-rect/ellipse). Text/image/video/precomp layers
 /// are skipped until their render paths land (render-engine.md §8 step 4+).
-struct RenderTreeBuilder {
+public struct RenderTreeBuilder {
     let document: MotionDocument
     var textEngine: TextEngine?
 
-    func build(compId: EntityID, at t: TimeInterval) -> [RenderItem] {
+    public init(document: MotionDocument, textEngine: TextEngine? = nil) {
+        self.document = document
+        self.textEngine = textEngine
+    }
+
+    public func build(compId: EntityID, at t: TimeInterval) -> [RenderItem] {
         guard let comp = document.composition(compId) else { return [] }
         let scene = SceneEvaluator(document: document)
         let evaluated = scene.evaluate(compId: compId, at: t)

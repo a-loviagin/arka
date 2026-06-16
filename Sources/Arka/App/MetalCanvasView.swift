@@ -5,6 +5,7 @@ import QuartzCore
 import Metal
 import simd
 import MotionKernel
+import MotionRender
 
 /// AppKit-hosted Metal canvas (editor-ui.md §1-2): the display-speed surface, bridged into SwiftUI.
 /// Driven by the engine's preview path — a `CADisplayLink` tick asks the clock for time, evaluates

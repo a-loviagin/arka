@@ -11,6 +11,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "MotionKernel", targets: ["MotionKernel"]),
+        .library(name: "MotionRender", targets: ["MotionRender"]),
         .executable(name: "Arka", targets: ["Arka"]),
     ],
     targets: [
@@ -25,11 +26,20 @@ let package = Package(
             name: "MotionKernelTests",
             dependencies: ["MotionKernel"]
         ),
-        // The macOS app: SwiftUI shell + AppKit/Metal canvas. NOT built on Linux — CI builds only
-        // the MotionKernel target there. The .metal shader is compiled by SwiftPM into Bundle.module.
+        // The Metal render layer (RenderTree boundary). macOS-only via #if os(macOS) guards; the
+        // Linux CI build never touches it (it builds only the MotionKernel target).
+        .target(
+            name: "MotionRender",
+            dependencies: ["MotionKernel"]
+        ),
+        .testTarget(
+            name: "MotionRenderTests",
+            dependencies: ["MotionRender", "MotionKernel"]
+        ),
+        // The macOS app: SwiftUI shell + AppKit/Metal canvas.
         .executableTarget(
             name: "Arka",
-            dependencies: ["MotionKernel"]
+            dependencies: ["MotionKernel", "MotionRender"]
         ),
     ]
 )
