@@ -12,10 +12,13 @@ import MotionKernel
 public struct RenderTreeBuilder {
     let document: MotionDocument
     var textEngine: TextEngine?
+    weak var textures: (any TextureProvider)?
 
-    public init(document: MotionDocument, textEngine: TextEngine? = nil) {
+    public init(document: MotionDocument, textEngine: TextEngine? = nil,
+                textures: (any TextureProvider)? = nil) {
         self.document = document
         self.textEngine = textEngine
+        self.textures = textures
     }
 
     public func build(compId: EntityID, at t: TimeInterval) -> [RenderItem] {
@@ -44,8 +47,17 @@ public struct RenderTreeBuilder {
                 guard let run = engine.run(for: text, fontSize: fontSize,
                                            tracking: tracking, fill: fill) else { continue }
                 items.append(RenderItem(world: world, opacity: opacity, content: .glyphRun(run)))
+            case .image(let image):
+                guard let texture = textures?.texture(forAssetId: image.assetId) else { continue }
+                // Layer-local extents = the asset's pixel size (kernel reports the same for anchor).
+                let size = document.asset(image.assetId)?.pixelSize ?? Vec2(Double(texture.width),
+                                                                            Double(texture.height))
+                items.append(RenderItem(world: world, opacity: opacity,
+                                        content: .image(ImageQuad(
+                                            texture: texture,
+                                            size: SIMD2<Float>(Float(size.x), Float(size.y))))))
             default:
-                continue // image/video/precomp render paths land next
+                continue // video/precomp render paths land next
             }
         }
         return items

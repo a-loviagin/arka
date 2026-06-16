@@ -38,6 +38,7 @@ public final class MetalRenderer {
     private let queue: MTLCommandQueue
     private let shapePipeline: MTLRenderPipelineState
     private let glyphPipeline: MTLRenderPipelineState
+    private let imagePipeline: MTLRenderPipelineState
     private let sampler: MTLSamplerState
 
     private var shapeBuffer = GrowableBuffer<InstanceUniform>()
@@ -71,6 +72,7 @@ public final class MetalRenderer {
         }
         self.shapePipeline = try pipeline("shape_vertex", "shape_fragment")
         self.glyphPipeline = try pipeline("glyph_vertex", "glyph_fragment")
+        self.imagePipeline = try pipeline("glyph_vertex", "image_fragment")
 
         let sdesc = MTLSamplerDescriptor()
         sdesc.minFilter = .linear
@@ -97,6 +99,7 @@ public final class MetalRenderer {
     private enum DrawOp {
         case shapes(base: Int, count: Int)
         case glyphs(base: Int, count: Int, texture: MTLTexture)
+        case image(base: Int, texture: MTLTexture)
     }
 
     /// Draw a RenderTree into a drawable (the live preview path). `clear` is sRGB-encoded rgba.
@@ -178,6 +181,14 @@ public final class MetalRenderer {
                 if glyphs.count > base {
                     ops.append(.glyphs(base: base, count: glyphs.count - base, texture: run.atlas))
                 }
+            case .image(let img):
+                flushShapes()
+                let base = glyphs.count
+                glyphs.append(GlyphInstance(
+                    clipFromLocal: clipFromLocal, localOrigin: .zero, localSize: img.size,
+                    uvOrigin: .zero, uvSize: SIMD2<Float>(1, 1),
+                    tint: SIMD4<Float>(1, 1, 1, 1), opacity: item.opacity))
+                ops.append(.image(base: base, texture: img.texture))
             }
         }
         flushShapes()
@@ -218,6 +229,17 @@ public final class MetalRenderer {
                 enc.setFragmentSamplerState(sampler, index: 0)
                 enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4,
                                    instanceCount: count)
+            case .image(let base, let texture):
+                guard let buf = glyphBuffer.buffer else { continue }
+                var b = UInt32(base)
+                enc.setRenderPipelineState(imagePipeline)
+                enc.setVertexBuffer(buf, offset: 0, index: 0)
+                enc.setVertexBytes(&b, length: 4, index: 1)
+                enc.setFragmentBuffer(buf, offset: 0, index: 0)
+                enc.setFragmentTexture(texture, index: 0)
+                enc.setFragmentSamplerState(sampler, index: 0)
+                enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4,
+                                   instanceCount: 1)
             }
         }
         enc.endEncoding()

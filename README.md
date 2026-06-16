@@ -10,6 +10,12 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 4 — image layers (done).** A `TextureCache` (ImageIO/CGImage → premultiplied rgba8,
+keyed by `assetId`) plus an image fragment that reuses the textured-quad path. The RenderTree
+builder resolves image layers through a `TextureProvider`. Shapes, text, and images now composite
+together in z-order (verified by an image-color render test; 50 tests total). The demo scales in a
+procedural gradient image.
+
 **Phase 3 — renderer conformance (done).** Render code is now its own `MotionRender` library
 target (macOS-only, behind the RenderTree boundary), with an offscreen render-to-texture + pixel
 readback path (`PixelImage`, ImageIO PNG). The conformance suite (render-engine.md §7) does

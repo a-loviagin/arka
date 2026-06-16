@@ -1,11 +1,30 @@
 #if os(macOS)
 import Foundation
+import CoreGraphics
 import MotionKernel
 
 /// A built-in demo composition so the canvas shows the engine working: staggered cards spring up,
-/// a pill morphs its corner radius, a dot eases across. All Tier-1 shape + transform animation,
-/// expressed purely through the kernel's schema — no special-casing in the renderer.
+/// a pill morphs its corner radius, a dot eases across, a headline slides in, and a procedurally
+/// generated image scales in. All Tier-1 animation, expressed purely through the kernel's schema.
 enum DemoDocument {
+    static let logoAssetId: EntityID = "asset_logo"
+    static let logoSize = Vec2(220, 220)
+
+    /// A procedural gradient tile standing in for an imported asset, so the image render path is
+    /// exercised without bundling a file.
+    static func makeLogoImage() -> CGImage {
+        let w = Int(logoSize.x), h = Int(logoSize.y)
+        let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                            bytesPerRow: w * 4, space: cs,
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let colors = [CGColor(red: 0.36, green: 0.55, blue: 1.0, alpha: 1),
+                      CGColor(red: 0.91, green: 0.36, blue: 0.96, alpha: 1)] as CFArray
+        let grad = CGGradient(colorsSpace: cs, colors: colors, locations: [0, 1])!
+        ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: w, y: h), options: [])
+        return ctx.makeImage()!
+    }
+
     static func make() -> MotionDocument {
         let W = 1920.0, H = 1080.0
         var layers: [Layer] = []
@@ -100,10 +119,26 @@ enum DemoDocument {
             )
         ))
 
+        // A procedural image that scales in (spring), demonstrating the image render path.
+        layers.append(Layer(
+            id: "layer_logo_img", name: "Logo Image", sortKey: "c2",
+            content: .image(ImageContent(assetId: logoAssetId)),
+            transform: Transform(
+                anchor: .static(Vec2(0.5, 0.5)),
+                position: .static(Vec2(960, 620)),
+                scale: .animated([Track(keyframes: [
+                    Keyframe(t: 0.4, v: Vec2(0, 0), interp: .spring(.bouncy)),
+                    Keyframe(t: 1.4, v: Vec2(1, 1)),
+                ])])
+            )
+        ))
+
         let comp = Composition(id: "comp_main", name: "Demo", size: Vec2(W, H), fps: 60,
                                duration: 3.0, backgroundColor: ColorValue(hex: "#0E0E14")!,
                                layers: layers)
+        let logo = Asset(id: logoAssetId, type: .image, path: "logo.png", pixelSize: logoSize)
         return MotionDocument(id: "doc_demo", meta: .init(title: "Arka Demo"),
+                              assets: [logo],
                               compositions: [comp], mainCompositionId: "comp_main")
     }
 }

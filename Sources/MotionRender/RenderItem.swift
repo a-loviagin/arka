@@ -19,6 +19,13 @@ public struct RenderItem {
 enum RenderContent {
     case shape(ResolvedShape)
     case glyphRun(GlyphRun)
+    case image(ImageQuad)
+}
+
+/// An image layer resolved to a textured quad spanning the layer's local bounds (uv full).
+struct ImageQuad {
+    var texture: MTLTexture
+    var size: SIMD2<Float>   // layer-local extents (points) = the asset's pixel size
 }
 
 /// A laid-out run of glyphs sharing one atlas texture, tinted by the text's fill color. Positions

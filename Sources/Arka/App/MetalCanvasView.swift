@@ -13,6 +13,7 @@ import MotionRender
 final class CanvasNSView: NSView {
     private var renderer: MetalRenderer?
     private var textEngine: TextEngine?
+    private var textures: TextureCache?
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
     private var displayLink: CADisplayLink?
 
@@ -31,6 +32,9 @@ final class CanvasNSView: NSView {
             metalLayer.isOpaque = true
             renderer = try? MetalRenderer(device: device)
             textEngine = TextEngine(device: device)
+            let cache = TextureCache(device: device)
+            cache.register(id: DemoDocument.logoAssetId, cgImage: DemoDocument.makeLogoImage())
+            textures = cache
         }
     }
 
@@ -75,7 +79,7 @@ final class CanvasNSView: NSView {
         guard let renderer, let comp = document.mainComposition,
               let drawable = metalLayer.nextDrawable() else { return }
         let t = playback.currentTime
-        let items = RenderTreeBuilder(document: document, textEngine: textEngine)
+        let items = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures)
             .build(compId: comp.id, at: t)
         let vp = SIMD2<Float>(Float(metalLayer.drawableSize.width),
                               Float(metalLayer.drawableSize.height))

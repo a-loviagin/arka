@@ -138,6 +138,17 @@ enum ShaderSource {
         float a = coverage * inst.tint.a * inst.opacity;
         return float4(inst.tint.rgb * a, a); // pre-multiplied
     }
+
+    // Image quads: sample a pre-multiplied RGBA texture, scale by chain opacity. Shares the
+    // textured-quad vertex (glyph_vertex); uv spans the full image.
+    fragment float4 image_fragment(GlyphOut in [[stage_in]],
+                                   constant GlyphInstance *instances [[buffer(0)]],
+                                   texture2d<float> tex [[texture(0)]],
+                                   sampler samp [[sampler(0)]]) {
+        constant GlyphInstance &inst = instances[in.instance];
+        float4 t = tex.sample(samp, in.uv);
+        return t * inst.opacity; // texture is pre-multiplied; scaling preserves that
+    }
     """
 }
 #endif

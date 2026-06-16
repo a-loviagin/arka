@@ -2,6 +2,7 @@
 import XCTest
 import Metal
 import simd
+import CoreGraphics
 @testable import MotionRender
 import MotionKernel
 
@@ -138,6 +139,44 @@ final class RenderGoldenTests: XCTestCase {
         var lit = 0
         for y in 0..<100 { for x in 0..<100 where img.pixel(x, y).r > 60 { lit += 1 } }
         XCTAssertGreaterThan(lit, 20, "glyph 'I' should light up a column of pixels")
+    }
+
+    func testImageLayerRendersTextureColor() throws {
+        // Register a solid-magenta image, place it as a centered image layer, assert the texture
+        // samples through to the framebuffer.
+        let cache = TextureCache(device: device)
+        let cg = makeSolidCGImage(32, 32, r: 1, g: 0, b: 1)
+        XCTAssertNotNil(cache.register(id: "asset_m", cgImage: cg))
+
+        let layer = Layer(id: "img", name: "img", sortKey: "a0",
+                          content: .image(ImageContent(assetId: "asset_m")),
+                          transform: Transform(anchor: .static(Vec2(0.5, 0.5)),
+                                               position: .static(Vec2(50, 50))))
+        let comp = Composition(id: "comp_main", size: Vec2(100, 100), fps: 60, duration: 1,
+                               backgroundColor: .black, layers: [layer])
+        let d = MotionDocument(id: "doc",
+                               assets: [Asset(id: "asset_m", type: .image, path: "x.png",
+                                              pixelSize: Vec2(40, 40))],
+                               compositions: [comp], mainCompositionId: "comp_main")
+
+        let items = RenderTreeBuilder(document: d, textures: cache).build(compId: "comp_main", at: 0)
+        XCTAssertEqual(items.count, 1, "image layer should produce one render item")
+        let img = renderer.renderToImage(items: items, compSize: SIMD2<Float>(100, 100),
+                                         pixelSize: (100, 100), clear: SIMD4<Double>(0, 0, 0, 1))!
+        let p = img.pixel(50, 50)
+        assertChannel(p.r, 255, "image.r"); assertChannel(p.g, 0, "image.g"); assertChannel(p.b, 255, "image.b")
+        // Corner is outside the 40×40 centered image (comp 30…70) → background.
+        assertChannel(img.pixel(5, 5).r, 0, "outside image is bg")
+    }
+
+    private func makeSolidCGImage(_ w: Int, _ h: Int, r: CGFloat, g: CGFloat, b: CGFloat) -> CGImage {
+        let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8,
+                            bytesPerRow: w * 4, space: cs, bitmapInfo: info)!
+        ctx.setFillColor(red: r, green: g, blue: b, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()!
     }
 
     // MARK: IO + golden pin
