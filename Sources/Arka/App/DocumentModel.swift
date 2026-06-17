@@ -60,6 +60,10 @@ final class DocumentModel {
     struct SelectedKeyframe: Equatable { var path: String; var t: TimeInterval }
     var selectedKeyframe: SelectedKeyframe?
 
+    /// Active canvas tool (editor-ui.md §3 keymap: V select, A anchor).
+    enum Tool { case select, anchor }
+    var tool: Tool = .select
+
     var mainComp: Composition? { document.mainComposition }
     func layer(_ id: EntityID) -> Layer? { mainComp?.layer(id) }
     var selectedLayer: Layer? { selection.first.flatMap { layer($0) } }
@@ -107,6 +111,13 @@ final class DocumentModel {
             command = .setProperty(path: path, value: .scalar(degrees))
         }
         try? store.perform(command, in: txn)
+    }
+
+    /// Move the anchor (normalized) while keeping the layer visually fixed: anchor is set static and
+    /// position follows so the same pixels stay put (editor-ui.md §2 anchor tool).
+    func setAnchor(_ layerId: EntityID, anchor: Vec2, position: Vec2, within txn: TransactionID) {
+        try? store.perform(.setProperty(path: "\(layerId)/transform/anchor", value: .vec2(anchor)), in: txn)
+        setPosition(layerId, to: position, within: txn)
     }
 
     /// Set a layer's opacity (0…1), auto-keyframing the same way.

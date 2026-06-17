@@ -10,6 +10,13 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 15 — canvas/inspector refinements (done).** **Snapping + alignment guides** on moves (to
+comp + other-layer edges/centers, red guides, ⌘ disables) via a pure kernel `CanvasSnapper`; an
+**anchor tool** (drag the anchor while the layer stays put); **non-uniform scale** (per-axis corner
+projection, ⇧ for uniform); **scrubbable number fields** (X/Y/rotation/scale, one transaction per
+drag); and **multi-select** (shift-click, marquee, layer-list ⌘/⇧-click) with multi-layer move. 81
+tests.
+
 **Phase 14 — timeline polish (done).** Keyframes are now fully editable: click a diamond to
 **select** it (Edit ▸ Delete Keyframe / ⌫ removes it), and click a **segment** between two keys to
 open an **easing popover** (Linear / Ease In-Out / Snappy / Bouncy) — backed by a new kernel
