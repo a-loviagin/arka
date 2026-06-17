@@ -30,15 +30,18 @@ final class RenderGoldenTests: XCTestCase {
     private func render(_ doc: MotionDocument, at t: TimeInterval,
                         size: Int, textEngine: TextEngine? = nil) -> PixelImage {
         let comp = doc.mainComposition!
-        let items = RenderTreeBuilder(document: doc, textEngine: textEngine)
+        let nodes = RenderTreeBuilder(document: doc, textEngine: textEngine, textures: textureProvider)
             .build(compId: comp.id, at: t)
         let bg = comp.backgroundColor
         return renderer.renderToImage(
-            items: items,
+            nodes: nodes,
             compSize: SIMD2<Float>(Float(comp.size.x), Float(comp.size.y)),
             pixelSize: (size, size),
             clear: SIMD4<Double>(bg.r, bg.g, bg.b, bg.a))!
     }
+
+    /// Optional texture provider for tests that render image layers (set per-test).
+    var textureProvider: (any TextureProvider)?
 
     private func doc(size: Double, bg: ColorValue, layers: [Layer]) -> MotionDocument {
         let comp = Composition(id: "comp_main", size: Vec2(size, size), fps: 60,
@@ -159,9 +162,9 @@ final class RenderGoldenTests: XCTestCase {
                                               pixelSize: Vec2(40, 40))],
                                compositions: [comp], mainCompositionId: "comp_main")
 
-        let items = RenderTreeBuilder(document: d, textures: cache).build(compId: "comp_main", at: 0)
-        XCTAssertEqual(items.count, 1, "image layer should produce one render item")
-        let img = renderer.renderToImage(items: items, compSize: SIMD2<Float>(100, 100),
+        let nodes = RenderTreeBuilder(document: d, textures: cache).build(compId: "comp_main", at: 0)
+        XCTAssertEqual(nodes.count, 1, "image layer should produce one render node")
+        let img = renderer.renderToImage(nodes: nodes, compSize: SIMD2<Float>(100, 100),
                                          pixelSize: (100, 100), clear: SIMD4<Double>(0, 0, 0, 1))!
         let p = img.pixel(50, 50)
         assertChannel(p.r, 255, "image.r"); assertChannel(p.g, 0, "image.g"); assertChannel(p.b, 255, "image.b")
@@ -229,6 +232,51 @@ final class RenderGoldenTests: XCTestCase {
         // The sharp rect itself is still white on top.
         XCTAssertGreaterThan(s.pixel(40, 40).r, 180, "rect content survives over its shadow")
         XCTAssertGreaterThan(s.pixel(40, 40).b, 180, "rect is white, shadow only behind it")
+    }
+
+    // MARK: Precomp
+
+    func testPrecompRendersThroughParentTransform() {
+        // Sub-comp: a white square filling its 50×50 frame.
+        let sub = Composition(id: "comp_sub", size: Vec2(50, 50), fps: 60, duration: 1,
+                              backgroundColor: .clear, layers: [
+            Layer(id: "r", name: "r", sortKey: "a0",
+                  content: .shape(ShapeContent(geometry: .rect, size: .static(Vec2(50, 50)), fillColor: .static(.white))),
+                  transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(Vec2(25, 25))))
+        ])
+        // Main comp: nests the sub-comp centered (50×50 quad → spans comp 25…75).
+        let main = Composition(id: "comp_main", size: Vec2(100, 100), fps: 60, duration: 1,
+                               backgroundColor: .black, layers: [
+            Layer(id: "pc", name: "pc", sortKey: "a0",
+                  content: .precomp(PrecompContent(compositionId: "comp_sub")),
+                  transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(Vec2(50, 50))))
+        ])
+        let d = MotionDocument(id: "d", compositions: [main, sub], mainCompositionId: "comp_main")
+        let img = render(d, at: 0, size: 100)
+        XCTAssertGreaterThan(img.pixel(50, 50).r, 200, "precomp content visible at center")
+        XCTAssertGreaterThan(img.pixel(30, 50).r, 200, "precomp covers comp 25…75")
+        XCTAssertLessThan(img.pixel(18, 50).r, 20, "left of the precomp is background")
+        XCTAssertLessThan(img.pixel(5, 5).r, 20, "corner is background")
+    }
+
+    func testPrecompAppliesItsOwnOpacity() {
+        let sub = Composition(id: "comp_sub", size: Vec2(50, 50), fps: 60, duration: 1,
+                              backgroundColor: .clear, layers: [
+            Layer(id: "r", name: "r", sortKey: "a0",
+                  content: .shape(ShapeContent(geometry: .rect, size: .static(Vec2(50, 50)), fillColor: .static(.white))),
+                  transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(Vec2(25, 25))))
+        ])
+        let main = Composition(id: "comp_main", size: Vec2(100, 100), fps: 60, duration: 1,
+                               backgroundColor: .black, layers: [
+            Layer(id: "pc", name: "pc", sortKey: "a0",
+                  content: .precomp(PrecompContent(compositionId: "comp_sub")),
+                  transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(Vec2(50, 50)),
+                                       opacity: .static(0.5)))
+        ])
+        let d = MotionDocument(id: "d", compositions: [main, sub], mainCompositionId: "comp_main")
+        let img = render(d, at: 0, size: 100)
+        // White sub-content at 50% over black → ~half gray; opacity applies to the whole precomp.
+        assertChannel(img.pixel(50, 50).r, 128, tol: 6, "precomp opacity halves white")
     }
 
     // MARK: IO + golden pin

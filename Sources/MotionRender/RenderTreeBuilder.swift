@@ -21,14 +21,21 @@ public struct RenderTreeBuilder {
         self.textures = textures
     }
 
-    public func build(compId: EntityID, at t: TimeInterval) -> [RenderItem] {
+    public func build(compId: EntityID, at t: TimeInterval) -> [RenderNode] {
+        buildNodes(compId: compId, at: t, visiting: [])
+    }
+
+    /// Build one composition's RenderTree, recursing into precomp layers. `visiting` guards against
+    /// precomp cycles (a comp that nests itself, directly or transitively).
+    private func buildNodes(compId: EntityID, at t: TimeInterval,
+                            visiting: Set<EntityID>) -> [RenderNode] {
         guard let comp = document.composition(compId) else { return [] }
         let scene = SceneEvaluator(document: document)
         let evaluated = scene.evaluate(compId: compId, at: t)
         let byId = Dictionary(uniqueKeysWithValues: comp.layers.map { ($0.id, $0) })
 
-        var items: [RenderItem] = []
-        items.reserveCapacity(evaluated.count)
+        var nodes: [RenderNode] = []
+        nodes.reserveCapacity(evaluated.count)
 
         for ev in evaluated where ev.active && ev.opacity > 0.001 {
             guard let layer = byId[ev.layerId] else { continue }
@@ -39,8 +46,8 @@ public struct RenderTreeBuilder {
             switch layer.content {
             case .shape(let shape):
                 guard let resolved = resolveShape(shape, at: t) else { continue }
-                items.append(RenderItem(world: world, opacity: opacity,
-                                        content: .shape(resolved), effects: effects))
+                nodes.append(.leaf(RenderItem(world: world, opacity: opacity,
+                                              content: .shape(resolved), effects: effects)))
             case .text(let text):
                 guard let engine = textEngine else { continue }
                 let fontSize = text.fontSize.resolve(at: t)
@@ -48,23 +55,32 @@ public struct RenderTreeBuilder {
                 let fill = SIMD4<Float>(text.fillColor.resolve(at: t))
                 guard let run = engine.run(for: text, fontSize: fontSize,
                                            tracking: tracking, fill: fill) else { continue }
-                items.append(RenderItem(world: world, opacity: opacity,
-                                        content: .glyphRun(run), effects: effects))
+                nodes.append(.leaf(RenderItem(world: world, opacity: opacity,
+                                              content: .glyphRun(run), effects: effects)))
             case .image(let image):
                 guard let texture = textures?.texture(forAssetId: image.assetId) else { continue }
                 // Layer-local extents = the asset's pixel size (kernel reports the same for anchor).
                 let size = document.asset(image.assetId)?.pixelSize ?? Vec2(Double(texture.width),
                                                                             Double(texture.height))
-                items.append(RenderItem(world: world, opacity: opacity,
-                                        content: .image(ImageQuad(
-                                            texture: texture,
-                                            size: SIMD2<Float>(Float(size.x), Float(size.y)))),
-                                        effects: effects))
+                nodes.append(.leaf(RenderItem(world: world, opacity: opacity,
+                                              content: .image(ImageQuad(
+                                                texture: texture,
+                                                size: SIMD2<Float>(Float(size.x), Float(size.y)))),
+                                              effects: effects)))
+            case .precomp(let pre):
+                guard !visiting.contains(compId), // cycle guard
+                      let sub = document.composition(pre.compositionId) else { continue }
+                let children = buildNodes(compId: pre.compositionId, at: t,
+                                          visiting: visiting.union([compId]))
+                nodes.append(.precomp(Precomp(
+                    world: world, opacity: opacity, effects: effects,
+                    compSize: SIMD2<Float>(Float(sub.size.x), Float(sub.size.y)),
+                    children: children)))
             default:
-                continue // video/precomp render paths land next
+                continue // video render path lands next
             }
         }
-        return items
+        return nodes
     }
 
     private func resolveEffects(_ effects: [Effect], at t: TimeInterval) -> [ResolvedEffect] {

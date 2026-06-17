@@ -79,12 +79,12 @@ final class CanvasNSView: NSView {
         guard let renderer, let comp = document.mainComposition,
               let drawable = metalLayer.nextDrawable() else { return }
         let t = playback.currentTime
-        let items = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures)
+        let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures)
             .build(compId: comp.id, at: t)
         let vp = SIMD2<Float>(Float(metalLayer.drawableSize.width),
                               Float(metalLayer.drawableSize.height))
         let bg = comp.backgroundColor
-        renderer.draw(items: items,
+        renderer.draw(nodes: nodes,
                       compSize: SIMD2<Float>(Float(comp.size.x), Float(comp.size.y)),
                       viewport: vp,
                       clear: SIMD4<Double>(bg.r, bg.g, bg.b, bg.a),

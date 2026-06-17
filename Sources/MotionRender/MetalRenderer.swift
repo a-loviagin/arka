@@ -44,9 +44,6 @@ public final class MetalRenderer {
     private let sampler: MTLSamplerState
     private let pool: IntermediatePool
 
-    private var shapeBuffer = GrowableBuffer<InstanceUniform>()
-    private var glyphBuffer = GrowableBuffer<GlyphInstance>()
-
     /// Blur kernel parameters — must match `BlurParams` in Shaders.swift.
     private struct BlurParams { var texelStep: SIMD2<Float>; var sigma: Float; var taps: Int32 }
     /// Composite parameters — must match `CompositeParams` in Shaders.swift.
@@ -122,11 +119,11 @@ public final class MetalRenderer {
     }
 
     /// Draw a RenderTree into a drawable (the live preview path). `clear` is sRGB-encoded rgba.
-    public func draw(items: [RenderItem], compSize: SIMD2<Float>, viewport: SIMD2<Float>,
+    public func draw(nodes: [RenderNode], compSize: SIMD2<Float>, viewport: SIMD2<Float>,
                      clear: SIMD4<Double>, to drawable: CAMetalDrawable) {
         let proj = projection(compSize: compSize, viewport: viewport)
         guard let cmd = queue.makeCommandBuffer() else { return }
-        renderFrame(items: items, proj: proj, clear: clear, target: drawable.texture, cmd: cmd)
+        renderScene(nodes: nodes, proj: proj, clear: clear, target: drawable.texture, cmd: cmd)
         cmd.present(drawable)
         cmd.commit()
     }
@@ -134,7 +131,7 @@ public final class MetalRenderer {
     /// Render a RenderTree into an offscreen texture and read the pixels back (render-engine.md §5
     /// export path / §7 golden frames). 1:1 mapping when `pixelSize == compSize`. Same evaluate +
     /// encode objects as the preview path — that equivalence is the product's correctness promise.
-    public func renderToImage(items: [RenderItem], compSize: SIMD2<Float>,
+    public func renderToImage(nodes: [RenderNode], compSize: SIMD2<Float>,
                               pixelSize: (width: Int, height: Int),
                               clear: SIMD4<Double>) -> PixelImage? {
         let vp = SIMD2<Float>(Float(pixelSize.width), Float(pixelSize.height))
@@ -147,7 +144,7 @@ public final class MetalRenderer {
         guard let texture = device.makeTexture(descriptor: desc),
               let cmd = queue.makeCommandBuffer() else { return nil }
 
-        renderFrame(items: items, proj: proj, clear: clear, target: texture, cmd: cmd)
+        renderScene(nodes: nodes, proj: proj, clear: clear, target: texture, cmd: cmd)
         cmd.commit()
         cmd.waitUntilCompleted()
 
@@ -160,14 +157,48 @@ public final class MetalRenderer {
         return PixelImage(width: pixelSize.width, height: pixelSize.height, bgra: bgra)
     }
 
-    /// One frame: pre-render effect layers into intermediates, then a single main pass that draws
-    /// direct items and composites the effect results in z-order. The command buffer retains the
-    /// transient buffers / pool textures until completion.
-    private func renderFrame(items: [RenderItem], proj: simd_float3x3,
+    /// One top-level frame: reset the pool, resolve any precomp subtrees into textures, then encode
+    /// the main pass into `target`.
+    private func renderScene(nodes: [RenderNode], proj: simd_float3x3,
                              clear: SIMD4<Double>, target: MTLTexture, cmd: MTLCommandBuffer) {
         pool.releaseAll()
-        let w = target.width, h = target.height
         var transient: [MTLBuffer] = []
+        let items = resolvePrecomps(nodes, proj: proj, cmd: cmd, transient: &transient)
+        encodeMain(items: items, proj: proj, clear: clear, target: target, cmd: cmd, transient: &transient)
+        _ = transient // retained by cmd until completion
+    }
+
+    /// Recursively rasterize precomp subtrees into pooled textures, returning a flat leaf list.
+    /// Nested precomps recurse; the shared pool is never released mid-frame so sub-textures stay
+    /// valid until the command buffer completes.
+    private func resolvePrecomps(_ nodes: [RenderNode], proj: simd_float3x3,
+                                 cmd: MTLCommandBuffer, transient: inout [MTLBuffer]) -> [RenderItem] {
+        var out: [RenderItem] = []
+        for node in nodes {
+            switch node {
+            case .leaf(let item):
+                out.append(item)
+            case .precomp(let pre):
+                let w = max(Int(pre.compSize.x), 1), h = max(Int(pre.compSize.y), 1)
+                guard let tex = pool.acquire(width: w, height: h) else { continue }
+                let subProj = projection(compSize: pre.compSize, viewport: pre.compSize) // 1:1
+                let subItems = resolvePrecomps(pre.children, proj: subProj, cmd: cmd, transient: &transient)
+                // Precomps are transparent by default (the nested comp's background doesn't occlude).
+                encodeMain(items: subItems, proj: subProj, clear: SIMD4<Double>(0, 0, 0, 0),
+                           target: tex, cmd: cmd, transient: &transient)
+                out.append(RenderItem(world: pre.world, opacity: pre.opacity,
+                                      content: .image(ImageQuad(texture: tex, size: pre.compSize)),
+                                      effects: pre.effects))
+            }
+        }
+        return out
+    }
+
+    /// Encode effect pre-passes + the main pass for a flat leaf list into `target`. Does not touch
+    /// the pool's free list (caller owns frame lifetime), so it composes under `resolvePrecomps`.
+    private func encodeMain(items: [RenderItem], proj: simd_float3x3, clear: SIMD4<Double>,
+                            target: MTLTexture, cmd: MTLCommandBuffer, transient: inout [MTLBuffer]) {
+        let w = target.width, h = target.height
 
         // Phase 1: render each effected layer (content → blur passes) into pooled textures.
         var effectOps: [Int: [CompositeOp]] = [:]
@@ -212,24 +243,25 @@ public final class MetalRenderer {
         }
         flushShapes()
 
-        shapeBuffer.upload(shapes, device: device)
-        glyphBuffer.upload(glyphs, device: device)
+        // Own buffers per call: encodeMain runs once per precomp + once top-level, all in one
+        // command buffer, so a shared buffer would let a later upload corrupt an earlier pass.
+        let shapeBuf = makeBuffer(shapes); if let b = shapeBuf { transient.append(b) }
+        let glyphBuf = makeBuffer(glyphs); if let b = glyphBuf { transient.append(b) }
 
         guard let enc = cmd.makeRenderCommandEncoder(descriptor: clearedPass(target, clear)) else { return }
         for op in ops {
             switch op {
             case .shapes(let base, let count):
-                if let buf = shapeBuffer.buffer { drawShapes(enc, buf, base: base, count: count) }
+                if let buf = shapeBuf { drawShapes(enc, buf, base: base, count: count) }
             case .glyphs(let base, let count, let texture):
-                if let buf = glyphBuffer.buffer { drawTextured(enc, glyphPipeline, buf, base: base, count: count, texture: texture) }
+                if let buf = glyphBuf { drawTextured(enc, glyphPipeline, buf, base: base, count: count, texture: texture) }
             case .image(let base, let texture):
-                if let buf = glyphBuffer.buffer { drawTextured(enc, imagePipeline, buf, base: base, count: 1, texture: texture) }
+                if let buf = glyphBuf { drawTextured(enc, imagePipeline, buf, base: base, count: 1, texture: texture) }
             case .composite(let c):
                 drawComposite(enc, c)
             }
         }
         enc.endEncoding()
-        _ = transient // retained by cmd until completion
     }
 
     // MARK: Effect pre-passes
@@ -372,28 +404,6 @@ public final class MetalRenderer {
         pass.colorAttachments[0].storeAction = .store
         pass.colorAttachments[0].clearColor = MTLClearColor(red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
         return pass
-    }
-}
-
-/// A shared-storage MTLBuffer that grows as needed and is rewritten each frame. Steady-state
-/// playback reuses the allocation (no per-frame churn once warm).
-private struct GrowableBuffer<T> {
-    private(set) var buffer: MTLBuffer?
-    private var capacity = 0
-
-    mutating func upload(_ values: [T], device: MTLDevice) {
-        guard !values.isEmpty else { return }
-        if values.count > capacity {
-            let newCap = max(values.count, capacity * 2, 64)
-            buffer = device.makeBuffer(length: newCap * MemoryLayout<T>.stride,
-                                       options: .storageModeShared)
-            capacity = newCap
-        }
-        if let buffer {
-            values.withUnsafeBytes { src in
-                buffer.contents().copyMemory(from: src.baseAddress!, byteCount: src.count)
-            }
-        }
     }
 }
 #endif

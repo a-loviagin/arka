@@ -4,6 +4,25 @@ import simd
 import Metal
 import MotionKernel
 
+/// A node in the RenderTree. Mostly leaves (one drawable layer); a `precomp` node nests another
+/// composition's subtree, which the renderer rasterizes into a texture and composites — the
+/// "After Effects superpower" (motion-document-schema.md §3, render-engine.md §3).
+public enum RenderNode {
+    case leaf(RenderItem)
+    case precomp(Precomp)
+}
+
+/// A nested composition resolved for rendering. Its `children` are the sub-comp's RenderTree (in
+/// sub-comp coordinate space); the renderer draws them into a `compSize` texture, then composites
+/// that texture through `world` at `opacity` with `effects` — exactly like an image layer.
+public struct Precomp {
+    var world: simd_float3x3      // precomp layer world (sub-comp local → parent comp space)
+    var opacity: Float
+    var effects: [ResolvedEffect]
+    var compSize: SIMD2<Float>    // referenced comp's size = the quad's local extents + sub-texture size
+    var children: [RenderNode]
+}
+
 /// The flat, immutable draw unit the GPU side consumes (render-engine.md §1). The renderer knows
 /// nothing about keyframes, easing, or the document — only resolved geometry, style, and a world
 /// matrix. This is the RenderTree boundary: `simd` and Metal live here, never in MotionKernel.

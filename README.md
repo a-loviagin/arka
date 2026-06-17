@@ -10,6 +10,13 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 6 — precomps / nesting (done).** The RenderTree is now a node tree (leaf | precomp); the
+builder recurses into referenced compositions (cycle-guarded) and the renderer rasterizes each
+nested comp into a pooled texture, then composites it through the precomp layer's transform,
+opacity, and effects — the "After Effects superpower". Nested comps reuse the shared frame pool and
+recurse arbitrarily. Verified structurally (transform + opacity) and visually (scaled/rotated
+nested comps with a drop shadow). 54 tests.
+
 **Phase 5 — intermediates & effects (done).** The multi-pass compositing machinery
 (render-engine.md §3): a size-bucketed `IntermediatePool`, layers with effects rendered into
 intermediate textures, then composited back in z-order. **Gaussian blur** (separable two-pass,
