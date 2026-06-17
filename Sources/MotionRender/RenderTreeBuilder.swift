@@ -21,32 +21,50 @@ public struct RenderTreeBuilder {
         self.textures = textures
     }
 
+    private static let rootKey = EntityID("__root__")
+
     public func build(compId: EntityID, at t: TimeInterval) -> [RenderNode] {
         buildNodes(compId: compId, at: t, visiting: [])
     }
 
-    /// Build one composition's RenderTree, recursing into precomp layers. `visiting` guards against
-    /// precomp cycles (a comp that nests itself, directly or transitively).
+    /// Build one composition's RenderTree by descending the parent tree, recursing into precomp
+    /// layers (cycle-guarded) and isolating faded/effected groups. `visiting` guards precomp cycles.
     private func buildNodes(compId: EntityID, at t: TimeInterval,
                             visiting: Set<EntityID>) -> [RenderNode] {
         guard let comp = document.composition(compId) else { return [] }
         let scene = SceneEvaluator(document: document)
-        let evaluated = scene.evaluate(compId: compId, at: t)
-        let byId = Dictionary(uniqueKeysWithValues: comp.layers.map { ($0.id, $0) })
+        let evById = Dictionary(uniqueKeysWithValues:
+            scene.evaluate(compId: compId, at: t).map { ($0.layerId, $0) })
 
+        // Parent → children (sorted by sortKey). Roots are parented to a sentinel.
+        var childrenOf: [EntityID: [Layer]] = [:]
+        for layer in comp.layers {
+            childrenOf[layer.parentId ?? Self.rootKey, default: []].append(layer)
+        }
+        for key in childrenOf.keys { childrenOf[key]?.sort { $0.sortKey < $1.sortKey } }
+
+        return buildSubtree(childrenOf[Self.rootKey] ?? [], compId: compId, at: t,
+                            visiting: visiting, evById: evById, childrenOf: childrenOf,
+                            enclosingIso: 1)
+    }
+
+    /// Render-ordered nodes for a set of sibling layers. `enclosingIso` is the absolute opacity of
+    /// the nearest enclosing isolation group (1 at the top); a node's render opacity is its absolute
+    /// opacity divided by it, so an isolation group applies its fade once at composite time.
+    private func buildSubtree(_ layers: [Layer], compId: EntityID, at t: TimeInterval,
+                              visiting: Set<EntityID>, evById: [EntityID: EvaluatedLayer],
+                              childrenOf: [EntityID: [Layer]], enclosingIso: Double) -> [RenderNode] {
         var nodes: [RenderNode] = []
-        nodes.reserveCapacity(evaluated.count)
-
-        for ev in evaluated where ev.active && ev.opacity > 0.001 {
-            guard let layer = byId[ev.layerId] else { continue }
+        for layer in layers {
+            guard let ev = evById[layer.id], ev.active, ev.opacity > 0.001 else { continue }
             let world = simd_float3x3(ev.world)
-            let opacity = Float(ev.opacity)
+            let rel = Float(ev.opacity / max(enclosingIso, 1e-6))
             let effects = resolveEffects(layer.effects, at: t)
 
             switch layer.content {
             case .shape(let shape):
                 guard let resolved = resolveShape(shape, at: t) else { continue }
-                nodes.append(.leaf(RenderItem(world: world, opacity: opacity,
+                nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                               content: .shape(resolved), effects: effects)))
             case .text(let text):
                 guard let engine = textEngine else { continue }
@@ -55,29 +73,47 @@ public struct RenderTreeBuilder {
                 let fill = SIMD4<Float>(text.fillColor.resolve(at: t))
                 guard let run = engine.run(for: text, fontSize: fontSize,
                                            tracking: tracking, fill: fill) else { continue }
-                nodes.append(.leaf(RenderItem(world: world, opacity: opacity,
+                nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                               content: .glyphRun(run), effects: effects)))
             case .image(let image):
                 guard let texture = textures?.texture(forAssetId: image.assetId) else { continue }
-                // Layer-local extents = the asset's pixel size (kernel reports the same for anchor).
                 let size = document.asset(image.assetId)?.pixelSize ?? Vec2(Double(texture.width),
                                                                             Double(texture.height))
-                nodes.append(.leaf(RenderItem(world: world, opacity: opacity,
+                nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                               content: .image(ImageQuad(
                                                 texture: texture,
                                                 size: SIMD2<Float>(Float(size.x), Float(size.y)))),
                                               effects: effects)))
             case .precomp(let pre):
-                guard !visiting.contains(compId), // cycle guard
+                guard !visiting.contains(compId),
                       let sub = document.composition(pre.compositionId) else { continue }
                 let children = buildNodes(compId: pre.compositionId, at: t,
                                           visiting: visiting.union([compId]))
                 nodes.append(.precomp(Precomp(
-                    world: world, opacity: opacity, effects: effects,
+                    world: world, opacity: rel, effects: effects,
                     compSize: SIMD2<Float>(Float(sub.size.x), Float(sub.size.y)),
                     children: children)))
-            default:
+            case .video:
                 continue // video render path lands next
+            case .group, .null:
+                let kids = childrenOf[layer.id] ?? []
+                guard !kids.isEmpty else { continue }
+                let ownOpacity = layer.transform.opacity.resolve(at: t)
+                let isolate = ownOpacity < 0.999 || !effects.isEmpty
+                if isolate {
+                    // Children render at opacity relative to this group; the fade applies once here.
+                    let childNodes = buildSubtree(kids, compId: compId, at: t, visiting: visiting,
+                                                  evById: evById, childrenOf: childrenOf,
+                                                  enclosingIso: ev.opacity)
+                    if !childNodes.isEmpty {
+                        nodes.append(.group(GroupNode(opacity: rel, effects: effects, children: childNodes)))
+                    }
+                } else {
+                    // Transparent passthrough: children render inline at this level.
+                    nodes.append(contentsOf: buildSubtree(kids, compId: compId, at: t, visiting: visiting,
+                                                          evById: evById, childrenOf: childrenOf,
+                                                          enclosingIso: enclosingIso))
+                }
             }
         }
         return nodes

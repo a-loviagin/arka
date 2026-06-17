@@ -10,6 +10,14 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 7 — group-opacity isolation (done).** Completes the compositing model (render-engine.md
+§3). The builder descends the parent tree and isolates faded/effected groups: their children render
+into one intermediate (opacity divided out so the group fades once at composite), so a group
+opacity < 1 fades overlapping children *together* rather than each separately. Precomp and group
+share one `ResolvedNode` path in the renderer. Verified: an isolated faded group's overlap equals a
+single child, while non-isolated translucent children stack brighter. 55 tests. The renderer now
+covers direct-draw, effects, precomp, and group isolation — all of §3.
+
 **Phase 6 — precomps / nesting (done).** The RenderTree is now a node tree (leaf | precomp); the
 builder recurses into referenced compositions (cycle-guarded) and the renderer rasterizes each
 nested comp into a pooled texture, then composites it through the precomp layer's transform,

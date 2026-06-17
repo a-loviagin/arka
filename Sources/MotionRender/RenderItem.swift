@@ -10,6 +10,16 @@ import MotionKernel
 public enum RenderNode {
     case leaf(RenderItem)
     case precomp(Precomp)
+    case group(GroupNode)
+}
+
+/// An isolation group (render-engine.md §3): its children are composited into one intermediate,
+/// then that result is faded/effected as a unit — so a group opacity < 1 fades overlapping children
+/// together rather than each one separately. Children are positioned in parent comp space.
+public struct GroupNode {
+    var opacity: Float
+    var effects: [ResolvedEffect]
+    var children: [RenderNode]
 }
 
 /// A nested composition resolved for rendering. Its `children` are the sub-comp's RenderTree (in

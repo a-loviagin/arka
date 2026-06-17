@@ -157,57 +157,80 @@ public final class MetalRenderer {
         return PixelImage(width: pixelSize.width, height: pixelSize.height, bgra: bgra)
     }
 
-    /// One top-level frame: reset the pool, resolve any precomp subtrees into textures, then encode
-    /// the main pass into `target`.
+    /// One top-level frame: reset the pool, rasterize precomp/group subtrees into textures, then
+    /// encode the main pass into `target`.
     private func renderScene(nodes: [RenderNode], proj: simd_float3x3,
                              clear: SIMD4<Double>, target: MTLTexture, cmd: MTLCommandBuffer) {
         pool.releaseAll()
         var transient: [MTLBuffer] = []
-        let items = resolvePrecomps(nodes, proj: proj, cmd: cmd, transient: &transient)
-        encodeMain(items: items, proj: proj, clear: clear, target: target, cmd: cmd, transient: &transient)
+        let resolved = resolveTree(nodes, proj: proj, w: target.width, h: target.height,
+                                   cmd: cmd, transient: &transient)
+        encodeMain(resolved, proj: proj, clear: clear, target: target, cmd: cmd, transient: &transient)
         _ = transient // retained by cmd until completion
     }
 
-    /// Recursively rasterize precomp subtrees into pooled textures, returning a flat leaf list.
-    /// Nested precomps recurse; the shared pool is never released mid-frame so sub-textures stay
-    /// valid until the command buffer completes.
-    private func resolvePrecomps(_ nodes: [RenderNode], proj: simd_float3x3,
-                                 cmd: MTLCommandBuffer, transient: inout [MTLBuffer]) -> [RenderItem] {
-        var out: [RenderItem] = []
+    /// A node whose precomp/group subtree has been rasterized into a texture.
+    private enum ResolvedNode {
+        case item(RenderItem)
+        case group(texture: MTLTexture, opacity: Float, effects: [ResolvedEffect])
+    }
+
+    /// Depth-first resolve: a precomp renders its comp into a `compSize` texture, becoming an image
+    /// leaf composited through the precomp transform; a group renders its children into a
+    /// target-size texture (same projection → children keep absolute positions), composited
+    /// fullscreen as a unit. The pool is never released mid-frame, so these textures stay valid
+    /// until the command buffer completes.
+    private func resolveTree(_ nodes: [RenderNode], proj: simd_float3x3, w: Int, h: Int,
+                             cmd: MTLCommandBuffer, transient: inout [MTLBuffer]) -> [ResolvedNode] {
+        var out: [ResolvedNode] = []
         for node in nodes {
             switch node {
             case .leaf(let item):
-                out.append(item)
+                out.append(.item(item))
             case .precomp(let pre):
-                let w = max(Int(pre.compSize.x), 1), h = max(Int(pre.compSize.y), 1)
-                guard let tex = pool.acquire(width: w, height: h) else { continue }
+                let pw = max(Int(pre.compSize.x), 1), ph = max(Int(pre.compSize.y), 1)
+                guard let tex = pool.acquire(width: pw, height: ph) else { continue }
                 let subProj = projection(compSize: pre.compSize, viewport: pre.compSize) // 1:1
-                let subItems = resolvePrecomps(pre.children, proj: subProj, cmd: cmd, transient: &transient)
+                let sub = resolveTree(pre.children, proj: subProj, w: pw, h: ph, cmd: cmd, transient: &transient)
                 // Precomps are transparent by default (the nested comp's background doesn't occlude).
-                encodeMain(items: subItems, proj: subProj, clear: SIMD4<Double>(0, 0, 0, 0),
-                           target: tex, cmd: cmd, transient: &transient)
-                out.append(RenderItem(world: pre.world, opacity: pre.opacity,
-                                      content: .image(ImageQuad(texture: tex, size: pre.compSize)),
-                                      effects: pre.effects))
+                encodeMain(sub, proj: subProj, clear: SIMD4<Double>(0, 0, 0, 0), target: tex, cmd: cmd, transient: &transient)
+                out.append(.item(RenderItem(world: pre.world, opacity: pre.opacity,
+                                            content: .image(ImageQuad(texture: tex, size: pre.compSize)),
+                                            effects: pre.effects)))
+            case .group(let g):
+                guard let tex = pool.acquire(width: w, height: h) else { continue }
+                let sub = resolveTree(g.children, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
+                encodeMain(sub, proj: proj, clear: SIMD4<Double>(0, 0, 0, 0), target: tex, cmd: cmd, transient: &transient)
+                out.append(.group(texture: tex, opacity: g.opacity, effects: g.effects))
             }
         }
         return out
     }
 
-    /// Encode effect pre-passes + the main pass for a flat leaf list into `target`. Does not touch
-    /// the pool's free list (caller owns frame lifetime), so it composes under `resolvePrecomps`.
-    private func encodeMain(items: [RenderItem], proj: simd_float3x3, clear: SIMD4<Double>,
+    /// Encode effect/group pre-passes + the main pass for resolved nodes into `target`. Does not
+    /// touch the pool's free list (caller owns frame lifetime), so it composes under `resolveTree`.
+    private func encodeMain(_ nodes: [ResolvedNode], proj: simd_float3x3, clear: SIMD4<Double>,
                             target: MTLTexture, cmd: MTLCommandBuffer, transient: inout [MTLBuffer]) {
         let w = target.width, h = target.height
 
-        // Phase 1: render each effected layer (content → blur passes) into pooled textures.
-        var effectOps: [Int: [CompositeOp]] = [:]
-        for (i, item) in items.enumerated() where !item.effects.isEmpty {
-            effectOps[i] = makeEffectComposites(item, proj: proj, w: w, h: h,
-                                                cmd: cmd, transient: &transient)
+        // Phase 1: anything needing an intermediate (effected items, groups) → composite ops.
+        var composites: [Int: [CompositeOp]] = [:]
+        for (i, node) in nodes.enumerated() {
+            switch node {
+            case .item(let item) where !item.effects.isEmpty:
+                if let content = renderContent(item, proj: proj, w: w, h: h, cmd: cmd, transient: &transient) {
+                    composites[i] = effectComposites(content: content, opacity: item.opacity,
+                                                     effects: item.effects, proj: proj, w: w, h: h, cmd: cmd)
+                }
+            case .group(let tex, let opacity, let effects):
+                composites[i] = effectComposites(content: tex, opacity: opacity,
+                                                 effects: effects, proj: proj, w: w, h: h, cmd: cmd)
+            default:
+                break
+            }
         }
 
-        // Phase 2: build the ordered main-pass op list (direct items batched; effect items → composites).
+        // Phase 2: ordered main pass (direct items batched; effected items + groups → composites).
         var shapes: [InstanceUniform] = []
         var glyphs: [GlyphInstance] = []
         var ops: [DrawOp] = []
@@ -217,12 +240,13 @@ public final class MetalRenderer {
             if pendingShapeCount > 0 { ops.append(.shapes(base: pendingShapeBase, count: pendingShapeCount)); pendingShapeCount = 0 }
         }
 
-        for (i, item) in items.enumerated() {
-            if let composites = effectOps[i] {
+        for (i, node) in nodes.enumerated() {
+            if let cops = composites[i] {
                 flushShapes()
-                for c in composites { ops.append(.composite(c)) }
+                for c in cops { ops.append(.composite(c)) }
                 continue
             }
+            guard case .item(let item) = node else { continue }
             let clip = proj * item.world
             switch item.content {
             case .shape(let s):
@@ -243,7 +267,7 @@ public final class MetalRenderer {
         }
         flushShapes()
 
-        // Own buffers per call: encodeMain runs once per precomp + once top-level, all in one
+        // Own buffers per call: encodeMain runs once per intermediate + once top-level, all in one
         // command buffer, so a shared buffer would let a later upload corrupt an earlier pass.
         let shapeBuf = makeBuffer(shapes); if let b = shapeBuf { transient.append(b) }
         let glyphBuf = makeBuffer(glyphs); if let b = glyphBuf { transient.append(b) }
@@ -266,28 +290,26 @@ public final class MetalRenderer {
 
     // MARK: Effect pre-passes
 
-    private func makeEffectComposites(_ item: RenderItem, proj: simd_float3x3, w: Int, h: Int,
-                                      cmd: MTLCommandBuffer, transient: inout [MTLBuffer]) -> [CompositeOp] {
-        guard let content = renderContent(item, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
-        else { return [] }
-
+    /// Given a pre-rendered content texture, produce composite ops: shadows (blurred, tinted, offset,
+    /// behind) then the content (blurred if a blur effect is present), faded by `opacity`. Shared by
+    /// effected leaves and isolation groups.
+    private func effectComposites(content: MTLTexture, opacity: Float, effects: [ResolvedEffect],
+                                  proj: simd_float3x3, w: Int, h: Int, cmd: MTLCommandBuffer) -> [CompositeOp] {
         var ops: [CompositeOp] = []
-        // Shadows draw first (behind), using a blurred copy of the sharp content's alpha.
-        for fx in item.effects {
-            if case .shadow(let offset, let radius, let color, let opacity) = fx {
+        for fx in effects {
+            if case .shadow(let offset, let radius, let color, let shOpacity) = fx {
                 let blurred = blur(content, radius: radius, w: w, h: h, cmd: cmd)
                 let offNDC = SIMD2<Float>(offset.x * proj.columns.0.x, offset.y * proj.columns.1.y)
                 ops.append(CompositeOp(texture: blurred, offsetNDC: offNDC, tint: color,
-                                       opacity: opacity * item.opacity, mode: 1))
+                                       opacity: shOpacity * opacity, mode: 1))
             }
         }
-        // Content on top, blurred if any blur effect is present.
         var result = content
-        for fx in item.effects {
+        for fx in effects {
             if case .blur(let radius) = fx { result = blur(result, radius: radius, w: w, h: h, cmd: cmd) }
         }
         ops.append(CompositeOp(texture: result, offsetNDC: .zero, tint: SIMD4<Float>(1, 1, 1, 1),
-                               opacity: item.opacity, mode: 0))
+                               opacity: opacity, mode: 0))
         return ops
     }
 

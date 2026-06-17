@@ -279,6 +279,43 @@ final class RenderGoldenTests: XCTestCase {
         assertChannel(img.pixel(50, 50).r, 128, tol: 6, "precomp opacity halves white")
     }
 
+    // MARK: Group opacity isolation
+
+    /// Two overlapping opaque white children. In a faded group, isolation composites them as a unit
+    /// (overlap == single == the group opacity), whereas a non-isolated 50%-per-child arrangement
+    /// makes the overlap visibly brighter.
+    func testGroupOpacityIsolatesOverlap() {
+        func childRect(_ id: String, x: Double, opacity: Double) -> Layer {
+            Layer(id: EntityID(id), name: id, sortKey: SortKey(id),
+                  content: .shape(ShapeContent(geometry: .rect, size: .static(Vec2(40, 40)), fillColor: .static(.white))),
+                  parentId: "g",
+                  transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(Vec2(x, 50)),
+                                       opacity: .static(opacity)))
+        }
+        func groupDoc(groupOpacity: Double, childOpacity: Double) -> MotionDocument {
+            let group = Layer(id: "g", name: "g", sortKey: "a0", content: .group,
+                              transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(.zero),
+                                                   opacity: .static(groupOpacity)))
+            let comp = Composition(id: "comp_main", size: Vec2(100, 100), fps: 60, duration: 1,
+                                   backgroundColor: .black,
+                                   layers: [group, childRect("a", x: 40, opacity: childOpacity),
+                                            childRect("b", x: 60, opacity: childOpacity)])
+            return MotionDocument(id: "d", compositions: [comp], mainCompositionId: "comp_main")
+        }
+
+        // Isolated: faded group (0.5), opaque children. Overlap (x=50) == single (x=25) == ~128.
+        let iso = render(groupDoc(groupOpacity: 0.5, childOpacity: 1.0), at: 0, size: 100)
+        let isoSingle = iso.pixel(25, 50).r
+        let isoOverlap = iso.pixel(50, 50).r
+        XCTAssertEqual(Int(isoSingle), 128, accuracy: 8, "single-child region at group opacity")
+        XCTAssertEqual(Int(isoOverlap), Int(isoSingle), accuracy: 8, "isolation: overlap matches single")
+
+        // Non-isolated control: opaque group (1.0), 50%-per-child. Overlap is brighter than single.
+        let perChild = render(groupDoc(groupOpacity: 1.0, childOpacity: 0.5), at: 0, size: 100)
+        XCTAssertGreaterThan(Int(perChild.pixel(50, 50).r), Int(perChild.pixel(25, 50).r) + 30,
+                             "without isolation, overlapping translucent children stack brighter")
+    }
+
     // MARK: IO + golden pin
 
     func testPNGRoundTrip() throws {
