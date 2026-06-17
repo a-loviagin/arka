@@ -10,6 +10,12 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 11 — timeline dope-sheet (done).** The other half of a keyframe tool (editor-ui.md §3): a
+scrubbable ruler/playhead, a row per layer with sub-rows for each animated property (kernel
+`TimelineDigest`), and keyframe diamonds you can drag to retime — emitting `MoveKeyframes` in one
+transaction (one ⌘Z step), frame-snapped unless ⌘ is held. Row taps select the layer, synced with
+the canvas. 73 tests.
+
 **Phase 10 — editor v0.1 (done).** The `CommandStore` (commands + snapshot undo) now drives the
 UI (editor-ui.md §1-2). `DocumentModel` owns the store; the document is an observable mirror
 refreshed on every command. On the canvas you can **click to select** (CPU hit-test against the
