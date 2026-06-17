@@ -77,6 +77,34 @@ final class DocumentModel {
         try? store.perform(command, in: txn)
     }
 
+    /// Set a layer's scale, auto-keyframing the same way.
+    func setScale(_ layerId: EntityID, to scale: Vec2, within txn: TransactionID) {
+        guard let layer = layer(layerId), let comp = mainComp else { return }
+        let path = "\(layerId)/transform/scale"
+        let command: AnyCommand
+        if layer.transform.scale.isAnimated {
+            let t = min(max(playback.currentTime, 0), comp.duration)
+            command = .setKeyframe(path: path, keyframe: AnyKeyframe(t: t, v: .vec2(scale)))
+        } else {
+            command = .setProperty(path: path, value: .vec2(scale))
+        }
+        try? store.perform(command, in: txn)
+    }
+
+    /// Set a layer's rotation (degrees), auto-keyframing the same way.
+    func setRotation(_ layerId: EntityID, to degrees: Double, within txn: TransactionID) {
+        guard let layer = layer(layerId), let comp = mainComp else { return }
+        let path = "\(layerId)/transform/rotation"
+        let command: AnyCommand
+        if layer.transform.rotation.isAnimated {
+            let t = min(max(playback.currentTime, 0), comp.duration)
+            command = .setKeyframe(path: path, keyframe: AnyKeyframe(t: t, v: .scalar(degrees)))
+        } else {
+            command = .setProperty(path: path, value: .scalar(degrees))
+        }
+        try? store.perform(command, in: txn)
+    }
+
     /// Set a layer's opacity (0…1), auto-keyframing the same way.
     func setOpacity(_ layerId: EntityID, to opacity: Double, within txn: TransactionID) {
         guard let layer = layer(layerId), let comp = mainComp else { return }

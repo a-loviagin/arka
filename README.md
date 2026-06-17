@@ -10,6 +10,12 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 13 — transform gizmos (done).** Canvas direct-manipulation is now complete: **corner
+handles scale** (uniform, about the layer's anchor) and a **rotate handle** above the box rotates,
+alongside the existing move. A press routes by what it lands on (handle → scale/rotate, body →
+move, empty → deselect); each gesture is one transaction (one ⌘Z) and auto-keyframes when the
+track is already animated. 75 tests.
+
 **Phase 12 — editor depth (done).** A **layer list** (select, drag-reorder → `ReorderLayer` with a
 fractional `SortKey`, visibility toggle via new `SetLayerVisible`/`SetLayerLocked` commands) and
 **keyframe authoring** — inspector diamond toggles add/remove a keyframe at the playhead for
