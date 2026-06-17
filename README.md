@@ -10,6 +10,13 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 8 — MP4 export (done).** First shareable output (export-and-format.md §1-2). A
+`VideoExporter` steps each frame at exact rational time (no clock — render-engine.md §5), renders
+into `CVPixelBuffer`-backed Metal textures (zero-copy via `CVMetalTextureCache`), and feeds an
+`AVAssetWriter` (H.264/HEVC, even dims, bpp-preset bitrate, BT.709 tag). Verified end-to-end: a
+clip is exported and read back — correct size/duration, and a decoded frame's pixels match the
+render (effects survive encode/decode). File ▸ Export Movie… in the app. 56 tests.
+
 **Phase 7 — group-opacity isolation (done).** Completes the compositing model (render-engine.md
 §3). The builder descends the parent tree and isolates faded/effected groups: their children render
 into one intermediate (opacity divided out so the group fades once at composite), so a group

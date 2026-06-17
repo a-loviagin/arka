@@ -128,6 +128,19 @@ public final class MetalRenderer {
         cmd.commit()
     }
 
+    /// Render a RenderTree into a caller-supplied texture (e.g. a `CVPixelBuffer`-backed export
+    /// target — render-engine.md §5). Blocks until the GPU finishes so the texture can be read or
+    /// encoded. Same evaluate + encode objects as the preview path: preview/export equivalence.
+    public func render(nodes: [RenderNode], compSize: SIMD2<Float>,
+                       clear: SIMD4<Double>, into target: MTLTexture) {
+        let vp = SIMD2<Float>(Float(target.width), Float(target.height))
+        let proj = projection(compSize: compSize, viewport: vp)
+        guard let cmd = queue.makeCommandBuffer() else { return }
+        renderScene(nodes: nodes, proj: proj, clear: clear, target: target, cmd: cmd)
+        cmd.commit()
+        cmd.waitUntilCompleted()
+    }
+
     /// Render a RenderTree into an offscreen texture and read the pixels back (render-engine.md §5
     /// export path / §7 golden frames). 1:1 mapping when `pixelSize == compSize`. Same evaluate +
     /// encode objects as the preview path — that equivalence is the product's correctness promise.
