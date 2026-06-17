@@ -1,6 +1,8 @@
 #if os(macOS)
 import Foundation
 import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 import MotionKernel
 
 /// A built-in demo composition so the canvas shows the engine working: staggered cards spring up,
@@ -23,6 +25,15 @@ enum DemoDocument {
         let grad = CGGradient(colorsSpace: cs, colors: colors, locations: [0, 1])!
         ctx.drawLinearGradient(grad, start: .zero, end: CGPoint(x: w, y: h), options: [])
         return ctx.makeImage()!
+    }
+
+    /// The demo image encoded as PNG bytes, so it can be embedded when saving a `.motion` package.
+    static func logoPNG() -> Data {
+        let data = NSMutableData()
+        let dest = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, makeLogoImage(), nil)
+        CGImageDestinationFinalize(dest)
+        return data as Data
     }
 
     static func make() -> MotionDocument {
@@ -143,7 +154,7 @@ enum DemoDocument {
         let comp = Composition(id: "comp_main", name: "Demo", size: Vec2(W, H), fps: 60,
                                duration: 3.0, backgroundColor: ColorValue(hex: "#0E0E14")!,
                                layers: layers)
-        let logo = Asset(id: logoAssetId, type: .image, path: "logo.png", pixelSize: logoSize)
+        let logo = Asset(id: logoAssetId, type: .image, path: "assets/logo.png", pixelSize: logoSize)
         return MotionDocument(id: "doc_demo", meta: .init(title: "Arka Demo"),
                               assets: [logo],
                               compositions: [comp], mainCompositionId: "comp_main")

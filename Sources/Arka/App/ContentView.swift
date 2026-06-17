@@ -5,18 +5,13 @@ import MotionKernel
 /// The SwiftUI shell (editor-ui.md §1). v1 is the canvas + a transport bar; the inspector, layer
 /// list, timeline, and AI panel are later surfaces that hang off the same `(document, state)` reads.
 struct ContentView: View {
-    let document: MotionDocument
-    @State private var playback: PlaybackController
+    let model: DocumentModel
 
-    init(document: MotionDocument) {
-        self.document = document
-        _playback = State(initialValue:
-            PlaybackController(duration: document.mainComposition?.duration ?? 5))
-    }
+    private var playback: PlaybackController { model.playback }
 
     var body: some View {
         VStack(spacing: 0) {
-            MetalCanvasView(document: document, playback: playback)
+            MetalCanvasView(model: model)
                 .frame(minWidth: 480, minHeight: 270)
                 .background(Color.black)
             transportBar
@@ -37,10 +32,9 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 96, alignment: .leading)
 
-            Slider(value: Binding(
-                get: { playback.currentTime },
-                set: { playback.seek(to: $0) }
-            ), in: 0...max(playback.duration, 0.001))
+            Slider(value: Binding(get: { playback.currentTime },
+                                  set: { playback.seek(to: $0) }),
+                   in: 0...max(playback.duration, 0.001))
 
             Toggle("Loop", isOn: Binding(get: { playback.loops },
                                          set: { playback.loops = $0 }))
@@ -53,7 +47,7 @@ struct ContentView: View {
     }
 
     private var timeLabel: String {
-        let fps = document.mainComposition?.fps ?? 60
+        let fps = model.document.mainComposition?.fps ?? 60
         let frame = Int((playback.currentTime * fps).rounded())
         return String(format: "%.2fs · f%d", playback.currentTime, frame)
     }

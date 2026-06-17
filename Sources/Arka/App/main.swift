@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 import Metal
 import MotionKernel
 import MotionRender
@@ -8,19 +9,20 @@ import MotionRender
 // Explicit NSApplication bootstrap rather than `@main struct App` so a plain `swift run Arka`
 // reliably shows an activated window with a menu (no app bundle / Info.plist required).
 
+let motionType = UTType(filenameExtension: "motion") ?? .package
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow?
-    var document = DemoDocument.make()
+    let model = DocumentModel()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let content = ContentView(document: document)
-
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 640),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false)
-        window.title = "Arka — Demo"
-        window.contentView = NSHostingView(rootView: content)
+        window.title = "Arka"
+        window.contentView = NSHostingView(rootView: ContentView(model: model))
         window.center()
         window.makeKeyAndOrderFront(nil)
         self.window = window
@@ -31,16 +33,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    /// File ▸ Export Movie… — render the demo comp to an H.264 .mp4 via the offscreen export path.
+    // MARK: File menu actions
+
+    @objc func savePackage(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [motionType]
+        panel.nameFieldStringValue = "Untitled.motion"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try model.save(to: url); NSWorkspace.shared.activateFileViewerSelecting([url]) }
+        catch { presentError(error) }
+    }
+
+    @objc func openPackage(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [motionType]
+        panel.canChooseDirectories = true // .motion is a package directory in v1
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do { try model.open(url) } catch { presentError(error) }
+    }
+
     @objc func exportMovie(_ sender: Any?) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.mpeg4Movie]
-        panel.nameFieldStringValue = "arka-demo.mp4"
+        panel.nameFieldStringValue = "arka.mp4"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        let doc = document // value type, Sendable
+        let doc = model.document
         DispatchQueue.global(qos: .userInitiated).async {
-            // Build everything inside the background closure so no non-Sendable state is captured.
             guard let device = MTLCreateSystemDefaultDevice(),
                   let renderer = try? MetalRenderer(device: device),
                   let comp = doc.mainComposition else { return }
@@ -54,13 +74,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 let message = error.localizedDescription
                 DispatchQueue.main.async {
-                    let alert = NSAlert()
-                    alert.messageText = "Export failed"
-                    alert.informativeText = message
-                    alert.runModal()
+                    let alert = NSAlert(); alert.messageText = "Export failed"
+                    alert.informativeText = message; alert.runModal()
                 }
             }
         }
+    }
+
+    private func presentError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Operation failed"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
     }
 }
 
@@ -73,8 +98,8 @@ MainActor.assumeIsolated {
     app.run()
 }
 
-/// Minimal main menu: app (Quit) + File (Export Movie…). Built once the delegate exists so the
-/// export item can target it.
+/// App (Quit) + File (Open / Save Package / Export Movie). Built once the delegate exists so the
+/// items can target it.
 @MainActor
 func buildMainMenu(target: AppDelegate) {
     let mainMenu = NSMenu()
@@ -88,9 +113,15 @@ func buildMainMenu(target: AppDelegate) {
     let fileItem = NSMenuItem()
     mainMenu.addItem(fileItem)
     let fileMenu = NSMenu(title: "File")
-    let export = NSMenuItem(title: "Export Movie…", action: #selector(AppDelegate.exportMovie(_:)), keyEquivalent: "e")
-    export.target = target
-    fileMenu.addItem(export)
+    func add(_ title: String, _ action: Selector, _ key: String) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = target
+        fileMenu.addItem(item)
+    }
+    add("Open…", #selector(AppDelegate.openPackage(_:)), "o")
+    add("Save Package…", #selector(AppDelegate.savePackage(_:)), "s")
+    fileMenu.addItem(.separator())
+    add("Export Movie…", #selector(AppDelegate.exportMovie(_:)), "e")
     fileItem.submenu = fileMenu
 
     NSApp.mainMenu = mainMenu

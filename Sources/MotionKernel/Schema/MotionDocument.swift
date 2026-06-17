@@ -27,6 +27,31 @@ public struct MotionDocument: Codable, Sendable, Equatable {
         self.mainCompositionId = mainCompositionId
     }
 
+    // Omitted = default (schema §1): meta/assets/schemaVersion may be absent in a hand-written or
+    // minimal document.
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, id, meta, assets, compositions, mainCompositionId
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decodeIfPresent(String.self, forKey: .schemaVersion)
+            ?? MotionDocument.currentSchemaVersion
+        id = try c.decode(EntityID.self, forKey: .id)
+        meta = try c.decodeIfPresent(Meta.self, forKey: .meta) ?? Meta()
+        assets = try c.decodeIfPresent([Asset].self, forKey: .assets) ?? []
+        compositions = try c.decode([Composition].self, forKey: .compositions)
+        mainCompositionId = try c.decode(EntityID.self, forKey: .mainCompositionId)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(schemaVersion, forKey: .schemaVersion)
+        try c.encode(id, forKey: .id)
+        try c.encode(meta, forKey: .meta)
+        if !assets.isEmpty { try c.encode(assets, forKey: .assets) }
+        try c.encode(compositions, forKey: .compositions)
+        try c.encode(mainCompositionId, forKey: .mainCompositionId)
+    }
+
     public struct Meta: Codable, Sendable, Equatable {
         public var title: String
         public var createdAt: String?

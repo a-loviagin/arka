@@ -9,33 +9,21 @@ import MotionRender
 
 /// AppKit-hosted Metal canvas (editor-ui.md §1-2): the display-speed surface, bridged into SwiftUI.
 /// Driven by the engine's preview path — a `CADisplayLink` tick asks the clock for time, evaluates
-/// the scene, and draws. Scrubbing later uses this exact path (render at t), so it feels identical.
+/// the scene, and draws. It reads the live `DocumentModel` each tick, so opening a package or
+/// editing the document refreshes the canvas automatically.
 final class CanvasNSView: NSView {
-    private var renderer: MetalRenderer?
-    private var textEngine: TextEngine?
-    private var textures: TextureCache?
+    private let model: DocumentModel
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
     private var displayLink: CADisplayLink?
 
-    var document: MotionDocument
-    let playback: PlaybackController
-
-    init(document: MotionDocument, playback: PlaybackController) {
-        self.document = document
-        self.playback = playback
+    init(model: DocumentModel) {
+        self.model = model
         super.init(frame: .zero)
         wantsLayer = true
-        if let device = MTLCreateSystemDefaultDevice() {
-            metalLayer.device = device
-            metalLayer.pixelFormat = .bgra8Unorm
-            metalLayer.framebufferOnly = true
-            metalLayer.isOpaque = true
-            renderer = try? MetalRenderer(device: device)
-            textEngine = TextEngine(device: device)
-            let cache = TextureCache(device: device)
-            cache.register(id: DemoDocument.logoAssetId, cgImage: DemoDocument.makeLogoImage())
-            textures = cache
-        }
+        metalLayer.device = model.device
+        metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.framebufferOnly = true
+        metalLayer.isOpaque = true
     }
 
     @available(*, unavailable)
@@ -71,16 +59,16 @@ final class CanvasNSView: NSView {
     }
 
     @objc private func step() {
-        playback.tick()
+        model.playback.tick()
         render()
     }
 
     func render() {
-        guard let renderer, let comp = document.mainComposition,
+        guard let renderer = model.renderer, let comp = model.document.mainComposition,
               let drawable = metalLayer.nextDrawable() else { return }
-        let t = playback.currentTime
-        let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures)
-            .build(compId: comp.id, at: t)
+        let t = model.playback.currentTime
+        let nodes = RenderTreeBuilder(document: model.document, textEngine: model.textEngine,
+                                      textures: model.textures).build(compId: comp.id, at: t)
         let vp = SIMD2<Float>(Float(metalLayer.drawableSize.width),
                               Float(metalLayer.drawableSize.height))
         let bg = comp.backgroundColor
@@ -94,15 +82,9 @@ final class CanvasNSView: NSView {
 
 /// SwiftUI bridge for the canvas (editor-ui.md §1: `NSViewRepresentable`).
 struct MetalCanvasView: NSViewRepresentable {
-    let document: MotionDocument
-    let playback: PlaybackController
+    let model: DocumentModel
 
-    func makeNSView(context: Context) -> CanvasNSView {
-        CanvasNSView(document: document, playback: playback)
-    }
-
-    func updateNSView(_ nsView: CanvasNSView, context: Context) {
-        nsView.document = document
-    }
+    func makeNSView(context: Context) -> CanvasNSView { CanvasNSView(model: model) }
+    func updateNSView(_ nsView: CanvasNSView, context: Context) {}
 }
 #endif

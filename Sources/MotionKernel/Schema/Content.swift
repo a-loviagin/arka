@@ -86,6 +86,29 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         self.strokeWidth = strokeWidth
         self.cornerRadius = cornerRadius
     }
+
+    // Omitted = default (schema §1): only `geometry` is required; size/fill default, the rest nil.
+    private enum CodingKeys: String, CodingKey {
+        case geometry, size, fillColor, strokeColor, strokeWidth, cornerRadius
+    }
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        geometry = try c.decode(ShapeGeometry.self, forKey: .geometry)
+        size = try c.decodeIfPresent(AnimatableValue<Vec2>.self, forKey: .size) ?? .static(Vec2(100, 100))
+        fillColor = try c.decodeIfPresent(AnimatableValue<ColorValue>.self, forKey: .fillColor) ?? .static(.black)
+        strokeColor = try c.decodeIfPresent(AnimatableValue<ColorValue>.self, forKey: .strokeColor)
+        strokeWidth = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .strokeWidth)
+        cornerRadius = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .cornerRadius)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(geometry, forKey: .geometry)
+        try c.encode(size, forKey: .size)
+        try c.encodeIfPresent(fillColor, forKey: .fillColor)
+        try c.encodeIfPresent(strokeColor, forKey: .strokeColor)
+        try c.encodeIfPresent(strokeWidth, forKey: .strokeWidth)
+        try c.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
+    }
 }
 
 // MARK: - Text

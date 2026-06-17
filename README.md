@@ -10,6 +10,14 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 9 — `.motion` save/open (done).** The self-contained package format (export-and-format.md
+§5): `MotionPackage` reads/writes a bundle directory (`document.json` + content-addressed `assets/`
++ `thumbnail.png`), with content-addressing (`ContentHash`), migration-on-open (`SchemaMigrator`),
+and asset-reference validation — all Foundation-only in the kernel (Linux-clean). Thumbnails render
+the frame at 25% duration. File ▸ Open / Save Package… in the app swap the live document and reload
+its assets. Verified end-to-end: a package with a real image asset is saved, reopened (migrated),
+and rendered back. 65 tests.
+
 **Phase 8 — MP4 export (done).** First shareable output (export-and-format.md §1-2). A
 `VideoExporter` steps each frame at exact rational time (no clock — render-engine.md §5), renders
 into `CVPixelBuffer`-backed Metal textures (zero-copy via `CVMetalTextureCache`), and feeds an

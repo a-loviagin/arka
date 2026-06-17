@@ -19,6 +19,8 @@ them, not the reverse.
   - `Commands/` — the **only write pathway**. `AnyCommand` (Codable wire format = AI output =
     future multiplayer protocol). `CommandStore` does snapshot undo + gesture transactions.
   - `Migration/` — semver-gated, append-only migration steps.
+  - `Persistence/` — `.motion` package read/write (`MotionPackage`) + content-addressing
+    (`ContentHash`). Foundation-only; a server reads/writes `.motion` with the same code.
 
 ## Conventions
 - Time is **seconds** (Double), never frames. `fps` is metadata.
