@@ -379,6 +379,7 @@ struct InspectorView: View {
     @State private var opacityTxn: TransactionID?
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 12) {
             if let layer = model.selectedLayer {
                 Text(layer.name.isEmpty ? "Layer" : layer.name)
@@ -438,15 +439,18 @@ struct InspectorView: View {
                         }
                     })
                 }
-                Spacer()
+                Divider()
+                PresetsView(model: model)
+                Spacer(minLength: 0)
             } else {
                 Text("No selection").foregroundStyle(.secondary)
                 Text("Click a layer on the canvas.").font(.caption).foregroundStyle(.tertiary)
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
         .background(.bar)
     }
 
@@ -504,6 +508,45 @@ struct ScrubbableField: View {
                 if let txn { onChange(startValue + Double(v.translation.width) * sensitivity, txn) }
             }
             .onEnded { _ in if let txn { onEnd(txn) }; txn = nil })
+    }
+}
+
+/// Motion presets panel (ai-pipeline.md §4 / §9 step 1, no AI): pick a character + duration, tap a
+/// pattern to apply it to the selected layer(s) at the playhead. Each tap is one ⌘Z of plain
+/// keyframes; multiple selected layers stagger.
+struct PresetsView: View {
+    let model: DocumentModel
+    @State private var character: MotionCharacter = .snappy
+    @State private var duration: Double = 0.6
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Presets").font(.headline)
+            Picker("", selection: $character) {
+                ForEach(MotionCharacter.allCases, id: \.self) { Text($0.displayName).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+
+            HStack(spacing: 6) {
+                Text("Duration").font(.caption).foregroundStyle(.secondary)
+                Slider(value: $duration, in: 0.1...2)
+                Text(String(format: "%.1fs", duration)).font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(MotionPattern.Group.allCases, id: \.self) { group in
+                Text(group.rawValue.uppercased()).font(.caption2).foregroundStyle(.secondary)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], spacing: 6) {
+                    ForEach(MotionPattern.allCases.filter { $0.group == group }, id: \.self) { pattern in
+                        Button(pattern.displayName) {
+                            model.applyPattern(pattern, character: character, duration: duration)
+                        }
+                        .buttonStyle(.bordered).controlSize(.small)
+                        .disabled(model.selection.isEmpty)
+                    }
+                }
+            }
+        }
     }
 }
 #endif

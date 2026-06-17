@@ -191,6 +191,21 @@ final class DocumentModel {
         return times.contains { abs($0 - t) <= tolerance }
     }
 
+    // MARK: Patterns / presets
+
+    /// Apply a motion preset to the selected layer(s) at the playhead — one ⌘Z, plain keyframes
+    /// (ai-pipeline.md §4). Multiple selected layers stagger.
+    func applyPattern(_ pattern: MotionPattern, character: MotionCharacter, duration: TimeInterval) {
+        guard let comp = mainComp, !selection.isEmpty else { return }
+        let layers = comp.layers.filter { selection.contains($0.id) }.sorted { $0.sortKey < $1.sortKey }
+        let params = PatternParams(at: playback.currentTime, duration: duration, character: character)
+        let cmds = layers.count > 1
+            ? PatternLibrary.stagger(pattern, on: layers, in: comp, params: params, gap: 0.08)
+            : PatternLibrary.expand(pattern, on: layers[0], in: comp, params: params)
+        guard !cmds.isEmpty else { return }
+        try? store.perform(.batch(commands: cmds, label: pattern.displayName), label: pattern.displayName)
+    }
+
     // MARK: Keyframe edit (timeline)
 
     func deleteSelectedKeyframe() {

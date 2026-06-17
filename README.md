@@ -10,6 +10,13 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 16 — motion pattern library + presets (done).** ai-pipeline.md §9 step 1 (no AI yet): a
+kernel `PatternLibrary` of ~15 hand-tuned, parametric patterns (fade/pop/scale-reveal, slide
+in/out ×4, pulse/bounce/shake) across four `MotionCharacter`s (gentle/snappy/bouncy/dramatic) that
+**expand deterministically into plain keyframe commands** — reviewed Swift + tuned values, not
+stochastic tokens. A presets panel applies them to the selected layer(s) at the playhead in one ⌘Z;
+multiple layers stagger. This is the foundation the eventual AI macro vocabulary plugs into. 86 tests.
+
 **Phase 15 — canvas/inspector refinements (done).** **Snapping + alignment guides** on moves (to
 comp + other-layer edges/centers, red guides, ⌘ disables) via a pure kernel `CanvasSnapper`; an
 **anchor tool** (drag the anchor while the layer stays put); **non-uniform scale** (per-axis corner
