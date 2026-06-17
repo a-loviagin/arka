@@ -12,9 +12,12 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
+                LayerListView(model: model)
+                    .frame(width: 190)
+                Divider()
                 VStack(spacing: 0) {
                     CanvasArea(model: model)
-                        .frame(minWidth: 480, minHeight: 270)
+                        .frame(minWidth: 420, minHeight: 270)
                     transportBar
                 }
                 Divider()
@@ -24,7 +27,7 @@ struct ContentView: View {
             Divider()
             TimelineView(model: model)
         }
-        .frame(minWidth: 860, minHeight: 600)
+        .frame(minWidth: 1040, minHeight: 600)
     }
 
     private var transportBar: some View {

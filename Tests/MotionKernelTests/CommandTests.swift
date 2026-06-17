@@ -82,6 +82,23 @@ final class CommandTests: XCTestCase {
         XCTAssertFalse(store.canUndo)
     }
 
+    func testSetLayerVisibleAndLocked() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.setLayerVisible(layerId: "layer_bg", visible: false), label: "Hide")
+        XCTAssertEqual(store.document.composition("comp_main")!.layer("layer_bg")!.visible, false)
+        try store.perform(.setLayerLocked(layerId: "layer_bg", locked: true), label: "Lock")
+        XCTAssertEqual(store.document.composition("comp_main")!.layer("layer_bg")!.locked, true)
+        store.undo()
+        XCTAssertEqual(store.document.composition("comp_main")!.layer("layer_bg")!.locked, false)
+    }
+
+    func testLayerFlagCommandsRoundTripJSON() throws {
+        let cmds: [AnyCommand] = [.setLayerVisible(layerId: "l", visible: false),
+                                  .setLayerLocked(layerId: "l", locked: true)]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     func testAISourceTaggedAndUndoneAtomically() throws {
         let store = CommandStore(document: Fixtures.sampleDocument())
         let original = store.document

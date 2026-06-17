@@ -32,6 +32,7 @@ extension AnyCommand {
         case type, layer, compId, layerId, sortKey, parentId
         case path, value, keyframe, t, easeIn, easeOut, moves
         case asset, assetId, setting, commands, label
+        case visible, locked
     }
 
     public init(from decoder: any Decoder) throws {
@@ -46,6 +47,12 @@ extension AnyCommand {
         case "ReorderLayer":
             self = .reorderLayer(layerId: try c.decode(EntityID.self, forKey: .layerId),
                                  sortKey: try c.decode(SortKey.self, forKey: .sortKey))
+        case "SetLayerVisible":
+            self = .setLayerVisible(layerId: try c.decode(EntityID.self, forKey: .layerId),
+                                    visible: try c.decode(Bool.self, forKey: .visible))
+        case "SetLayerLocked":
+            self = .setLayerLocked(layerId: try c.decode(EntityID.self, forKey: .layerId),
+                                   locked: try c.decode(Bool.self, forKey: .locked))
         case "SetLayerParent":
             self = .setLayerParent(layerId: try c.decode(EntityID.self, forKey: .layerId),
                                    parentId: try c.decodeIfPresent(EntityID.self, forKey: .parentId))
@@ -94,6 +101,14 @@ extension AnyCommand {
             try c.encode("ReorderLayer", forKey: .type)
             try c.encode(id, forKey: .layerId)
             try c.encode(sortKey, forKey: .sortKey)
+        case .setLayerVisible(let id, let visible):
+            try c.encode("SetLayerVisible", forKey: .type)
+            try c.encode(id, forKey: .layerId)
+            try c.encode(visible, forKey: .visible)
+        case .setLayerLocked(let id, let locked):
+            try c.encode("SetLayerLocked", forKey: .type)
+            try c.encode(id, forKey: .layerId)
+            try c.encode(locked, forKey: .locked)
         case .setLayerParent(let id, let parentId):
             try c.encode("SetLayerParent", forKey: .type)
             try c.encode(id, forKey: .layerId)

@@ -10,6 +10,12 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 12 — editor depth (done).** A **layer list** (select, drag-reorder → `ReorderLayer` with a
+fractional `SortKey`, visibility toggle via new `SetLayerVisible`/`SetLayerLocked` commands) and
+**keyframe authoring** — inspector diamond toggles add/remove a keyframe at the playhead for
+position & opacity (capturing the resolved value), so you can build animation from a static layer,
+not just edit existing keys. Everything still flows through the one `CommandStore`. 75 tests.
+
 **Phase 11 — timeline dope-sheet (done).** The other half of a keyframe tool (editor-ui.md §3): a
 scrubbable ruler/playhead, a row per layer with sub-rows for each animated property (kernel
 `TimelineDigest`), and keyframe diamonds you can drag to retime — emitting `MoveKeyframes` in one

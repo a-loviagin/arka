@@ -118,14 +118,20 @@ struct InspectorView: View {
 
                 let t = model.playback.currentTime
                 let position = layer.transform.position.resolve(at: t)
-                LabeledContent("Position") {
+                HStack {
+                    keyButton(layer.id, .position)
+                    Text("Position").font(.caption)
+                    Spacer()
                     Text(String(format: "%.0f, %.0f", position.x, position.y))
-                        .font(.system(.body, design: .monospaced))
+                        .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
                     let opacity = layer.transform.opacity.resolve(at: t)
-                    Text(String(format: "Opacity  %.0f%%", opacity * 100)).font(.caption)
+                    HStack {
+                        keyButton(layer.id, .opacity)
+                        Text(String(format: "Opacity  %.0f%%", opacity * 100)).font(.caption)
+                    }
                     Slider(value: Binding(
                         get: { layer.transform.opacity.resolve(at: model.playback.currentTime) },
                         set: { newValue in
@@ -149,6 +155,21 @@ struct InspectorView: View {
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.bar)
+    }
+
+    /// A keyframe toggle (diamond): filled when a keyframe sits at the playhead. Click to add/remove
+    /// a keyframe for that property at the current time (editor-ui.md §2 "add keyframe" diamond).
+    private func keyButton(_ layerId: EntityID, _ property: DocumentModel.KeyframeProperty) -> some View {
+        let active = model.hasKeyframeAtPlayhead(layerId, property)
+        return Button {
+            model.toggleKeyframe(layerId, property)
+        } label: {
+            Image(systemName: active ? "diamond.fill" : "diamond")
+                .font(.system(size: 10))
+                .foregroundStyle(active ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("Toggle keyframe at playhead")
     }
 }
 #endif

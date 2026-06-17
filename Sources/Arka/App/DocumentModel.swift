@@ -92,6 +92,62 @@ final class DocumentModel {
         try? store.perform(command, in: txn)
     }
 
+    // MARK: Layer list
+
+    func setVisible(_ layerId: EntityID, _ visible: Bool) {
+        try? store.perform(.setLayerVisible(layerId: layerId, visible: visible),
+                           label: visible ? "Show Layer" : "Hide Layer")
+    }
+
+    func setSortKey(_ layerId: EntityID, _ sortKey: SortKey) {
+        try? store.perform(.reorderLayer(layerId: layerId, sortKey: sortKey), label: "Reorder Layer")
+    }
+
+    // MARK: Keyframe authoring
+
+    enum KeyframeProperty { case position, opacity }
+
+    /// Toggle a keyframe at the playhead for the given property: remove it if one sits at (within
+    /// half a frame of) the playhead, otherwise add one capturing the current resolved value.
+    func toggleKeyframe(_ layerId: EntityID, _ property: KeyframeProperty) {
+        guard let layer = layer(layerId), let comp = mainComp else { return }
+        let t = min(max(playback.currentTime, 0), comp.duration)
+        let tolerance = 0.5 / max(comp.fps, 1)
+
+        switch property {
+        case .opacity:
+            let av = layer.transform.opacity
+            let path = "\(layerId)/transform/opacity"
+            if let existing = TimelineDigest.keyframeTimes(of: av).first(where: { abs($0 - t) <= tolerance }) {
+                try? store.perform(.removeKeyframe(path: path, t: existing), label: "Remove Keyframe")
+            } else {
+                try? store.perform(.setKeyframe(path: path,
+                    keyframe: AnyKeyframe(t: t, v: .scalar(av.resolve(at: t)))), label: "Add Keyframe")
+            }
+        case .position:
+            let av = layer.transform.position
+            let path = "\(layerId)/transform/position"
+            if let existing = TimelineDigest.keyframeTimes(of: av).first(where: { abs($0 - t) <= tolerance }) {
+                try? store.perform(.removeKeyframe(path: path, t: existing), label: "Remove Keyframe")
+            } else {
+                try? store.perform(.setKeyframe(path: path,
+                    keyframe: AnyKeyframe(t: t, v: .vec2(av.resolve(at: t)))), label: "Add Keyframe")
+            }
+        }
+    }
+
+    func hasKeyframeAtPlayhead(_ layerId: EntityID, _ property: KeyframeProperty) -> Bool {
+        guard let layer = layer(layerId), let comp = mainComp else { return false }
+        let t = min(max(playback.currentTime, 0), comp.duration)
+        let tolerance = 0.5 / max(comp.fps, 1)
+        let times: [TimeInterval]
+        switch property {
+        case .position: times = TimelineDigest.keyframeTimes(of: layer.transform.position)
+        case .opacity: times = TimelineDigest.keyframeTimes(of: layer.transform.opacity)
+        }
+        return times.contains { abs($0 - t) <= tolerance }
+    }
+
     // MARK: Files
 
     func save(to url: URL) throws {

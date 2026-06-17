@@ -8,6 +8,8 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case removeLayer(layerId: EntityID)
     case reorderLayer(layerId: EntityID, sortKey: SortKey)
     case setLayerParent(layerId: EntityID, parentId: EntityID?)
+    case setLayerVisible(layerId: EntityID, visible: Bool)
+    case setLayerLocked(layerId: EntityID, locked: Bool)
     case setProperty(path: String, value: AnyValue)
     case setKeyframe(path: String, keyframe: AnyKeyframe)
     case removeKeyframe(path: String, t: TimeInterval)
@@ -49,6 +51,8 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case .removeLayer(let id):
             _ = try locateLayer(id, in: doc)
         case .reorderLayer(let id, _):
+            _ = try locateLayer(id, in: doc)
+        case .setLayerVisible(let id, _), .setLayerLocked(let id, _):
             _ = try locateLayer(id, in: doc)
         case .setLayerParent(let id, let parentId):
             let (compIdx, _) = try locateLayer(id, in: doc)
@@ -116,6 +120,12 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case .reorderLayer(let id, let sortKey):
             let (ci, li) = try locateLayer(id, in: doc)
             doc.compositions[ci].layers[li].sortKey = sortKey
+        case .setLayerVisible(let id, let visible):
+            let (ci, li) = try locateLayer(id, in: doc)
+            doc.compositions[ci].layers[li].visible = visible
+        case .setLayerLocked(let id, let locked):
+            let (ci, li) = try locateLayer(id, in: doc)
+            doc.compositions[ci].layers[li].locked = locked
         case .setLayerParent(let id, let parentId):
             let (ci, li) = try locateLayer(id, in: doc)
             doc.compositions[ci].layers[li].parentId = parentId
