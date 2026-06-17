@@ -56,6 +56,10 @@ final class DocumentModel {
         }
     }
 
+    /// The keyframe currently selected in the timeline (for delete / easing), if any.
+    struct SelectedKeyframe: Equatable { var path: String; var t: TimeInterval }
+    var selectedKeyframe: SelectedKeyframe?
+
     var mainComp: Composition? { document.mainComposition }
     func layer(_ id: EntityID) -> Layer? { mainComp?.layer(id) }
     var selectedLayer: Layer? { selection.first.flatMap { layer($0) } }
@@ -174,6 +178,37 @@ final class DocumentModel {
         case .opacity: times = TimelineDigest.keyframeTimes(of: layer.transform.opacity)
         }
         return times.contains { abs($0 - t) <= tolerance }
+    }
+
+    // MARK: Keyframe edit (timeline)
+
+    func deleteSelectedKeyframe() {
+        guard let kf = selectedKeyframe else { return }
+        try? store.perform(.removeKeyframe(path: kf.path, t: kf.t), label: "Delete Keyframe")
+        selectedKeyframe = nil
+    }
+
+    enum EasingPreset: String, CaseIterable { case linear = "Linear", easeInOut = "Ease In-Out",
+                                              snappy = "Snappy", bouncy = "Bouncy" }
+
+    /// Apply an easing/interp preset to the segment starting at keyframe `t` on `path`.
+    func applyEasing(_ path: String, at t: TimeInterval, _ preset: EasingPreset) {
+        let command: AnyCommand
+        switch preset {
+        case .linear:
+            command = .setKeyframeInterp(path: path, t: t, interp: .linear)
+        case .easeInOut:
+            command = .batch(commands: [
+                .setKeyframeInterp(path: path, t: t, interp: .bezier),
+                .setKeyframeEasing(path: path, t: t,
+                                   easeIn: ControlPoint(0.58, 1), easeOut: ControlPoint(0.42, 0)),
+            ], label: "Ease In-Out")
+        case .snappy:
+            command = .setKeyframeInterp(path: path, t: t, interp: .spring(.snappy))
+        case .bouncy:
+            command = .setKeyframeInterp(path: path, t: t, interp: .spring(.bouncy))
+        }
+        try? store.perform(command, label: "Easing: \(preset.rawValue)")
     }
 
     // MARK: Files

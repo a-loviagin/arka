@@ -74,6 +74,17 @@ extension AnimatableValue {
         }
     }
 
+    /// Set the interpolation of the keyframe at `t` (the easing/spring of the segment it starts).
+    mutating func setInterp(at t: TimeInterval, _ interp: Interpolation) {
+        mutateTracks { tracks in
+            for i in tracks.indices where tracks[i].component == nil {
+                if let kfIdx = tracks[i].keyframes.firstIndex(where: { abs($0.t - t) < Self.timeEpsilon }) {
+                    tracks[i].keyframes[kfIdx].interp = interp
+                }
+            }
+        }
+    }
+
     /// Retime a keyframe from `oldT` to `newT`.
     mutating func moveKeyframe(from oldT: TimeInterval, to newT: TimeInterval) {
         mutateTracks { tracks in

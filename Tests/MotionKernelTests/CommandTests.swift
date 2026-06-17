@@ -99,6 +99,33 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
     }
 
+    func testSetKeyframeInterp() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        // layer_logo opacity is animated with a linear first segment; change it to a spring.
+        try store.perform(.setKeyframeInterp(path: "layer_logo/transform/opacity", t: 0.0,
+                                             interp: .spring(.bouncy)), label: "Easing")
+        let av = store.document.composition("comp_main")!.layer("layer_logo")!.transform.opacity
+        guard case .animated(let tracks) = av,
+              let kf = tracks.first?.keyframes.first(where: { abs($0.t) < 1e-6 }) else {
+            return XCTFail("expected animated opacity")
+        }
+        guard case .spring = kf.interp else { return XCTFail("interp should be spring") }
+        store.undo()
+        let back = store.document.composition("comp_main")!.layer("layer_logo")!.transform.opacity
+        if case .animated(let tr) = back, case .spring = tr.first!.keyframes.first!.interp {
+            XCTFail("undo should restore the original interp")
+        }
+    }
+
+    func testSetKeyframeInterpRoundTripsJSON() throws {
+        let cmds: [AnyCommand] = [
+            .setKeyframeInterp(path: "l/transform/position", t: 0.5, interp: .linear),
+            .setKeyframeInterp(path: "l/transform/position", t: 1.0, interp: .spring(.snappy)),
+        ]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     func testAISourceTaggedAndUndoneAtomically() throws {
         let store = CommandStore(document: Fixtures.sampleDocument())
         let original = store.document

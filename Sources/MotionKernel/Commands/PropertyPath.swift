@@ -68,6 +68,14 @@ public enum AnimatableSlot: Sendable {
         }
     }
 
+    public mutating func setInterp(at t: TimeInterval, _ interp: Interpolation) {
+        switch self {
+        case .scalar(var av): av.setInterp(at: t, interp); self = .scalar(av)
+        case .vec2(var av): av.setInterp(at: t, interp); self = .vec2(av)
+        case .color(var av): av.setInterp(at: t, interp); self = .color(av)
+        }
+    }
+
     public mutating func moveKeyframe(from oldT: TimeInterval, to newT: TimeInterval) {
         switch self {
         case .scalar(var av): av.moveKeyframe(from: oldT, to: newT); self = .scalar(av)

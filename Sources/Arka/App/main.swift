@@ -83,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func undo(_ sender: Any?) { model.store.undo() }
     @objc func redo(_ sender: Any?) { model.store.redo() }
+    @objc func deleteKeyframe(_ sender: Any?) { model.deleteSelectedKeyframe() }
 
     private func presentError(_ error: Error) {
         let alert = NSAlert()
@@ -136,6 +137,13 @@ func buildMainMenu(target: AppDelegate) {
     let redo = NSMenuItem(title: "Redo", action: #selector(AppDelegate.redo(_:)), keyEquivalent: "Z")
     redo.target = target
     editMenu.addItem(redo)
+    editMenu.addItem(.separator())
+    let del = NSMenuItem(title: "Delete Keyframe",
+                         action: #selector(AppDelegate.deleteKeyframe(_:)),
+                         keyEquivalent: "\u{8}") // ⌫
+    del.keyEquivalentModifierMask = []
+    del.target = target
+    editMenu.addItem(del)
     editItem.submenu = editMenu
 
     NSApp.mainMenu = mainMenu

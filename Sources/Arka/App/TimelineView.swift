@@ -17,6 +17,7 @@ struct TimelineView: View {
     @State private var dragOriginT: Double = 0
     @State private var dragLastT: Double = 0
     @State private var dragTxn: TransactionID?
+    @State private var easingTarget: EasingTarget?
 
     var body: some View {
         GeometryReader { geo in
@@ -42,6 +43,19 @@ struct TimelineView: View {
         }
         .frame(height: 200)
         .background(.bar)
+        .popover(item: $easingTarget) { target in
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Easing").font(.caption).foregroundStyle(.secondary)
+                ForEach(DocumentModel.EasingPreset.allCases, id: \.self) { preset in
+                    Button(preset.rawValue) {
+                        model.applyEasing(target.path, at: target.t, preset)
+                        easingTarget = nil
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+        }
     }
 
     private var layersTopFirst: [Layer] {
@@ -103,6 +117,11 @@ struct TimelineView: View {
                 .frame(width: leftWidth, alignment: .leading).padding(.leading, 24)
             ZStack(alignment: .leading) {
                 Rectangle().fill(Color.secondary.opacity(0.05))
+                // Segments (between consecutive keys) sit below the diamonds: tap one to set easing.
+                ForEach(Array(track.times.enumerated()).dropLast(), id: \.offset) { i, t in
+                    segment(path: track.path, startT: t, endT: track.times[i + 1],
+                            trackWidth: trackWidth, duration: duration)
+                }
                 ForEach(track.times.indices, id: \.self) { i in
                     diamond(path: track.path, t: track.times[i],
                             trackWidth: trackWidth, duration: duration, fps: fps)
@@ -113,20 +132,35 @@ struct TimelineView: View {
         .frame(height: rowHeight)
     }
 
+    private func segment(path: String, startT: Double, endT: Double, trackWidth: CGFloat, duration: Double) -> some View {
+        let x0 = CGFloat(startT / duration) * trackWidth
+        let x1 = CGFloat(endT / duration) * trackWidth
+        return Rectangle()
+            .fill(Color.clear)
+            .frame(width: max(x1 - x0, 1), height: rowHeight)
+            .contentShape(Rectangle())
+            .offset(x: x0)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onTapGesture { easingTarget = EasingTarget(path: path, t: startT) }
+    }
+
     private func diamond(path: String, t: Double, trackWidth: CGFloat, duration: Double, fps: Double) -> some View {
         let x = CGFloat(t / duration) * trackWidth
+        let isSelected = model.selectedKeyframe == .init(path: path, t: t)
         return Rectangle()
-            .fill(Color.accentColor)
-            .frame(width: 8, height: 8)
+            .fill(isSelected ? Color.white : Color.accentColor)
+            .frame(width: 9, height: 9)
             .rotationEffect(.degrees(45))
-            .offset(x: x - 4)
+            .overlay(isSelected ? Rectangle().stroke(Color.accentColor, lineWidth: 1.5)
+                        .frame(width: 9, height: 9).rotationEffect(.degrees(45)) : nil)
+            .offset(x: x - 4.5)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle().size(width: 14, height: rowHeight).offset(x: x - 7))
+            .contentShape(Rectangle().size(width: 16, height: rowHeight).offset(x: x - 8))
             .gesture(DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     if dragTxn == nil {
-                        // Select the owning layer and open the retime transaction.
                         model.selection = [EntityID(String(path.split(separator: "/").first ?? ""))]
+                        model.selectedKeyframe = .init(path: path, t: t)
                         dragPath = path; dragOriginT = t; dragLastT = t
                         dragTxn = model.store.begin("Move Keyframe")
                     }
@@ -142,8 +176,11 @@ struct TimelineView: View {
                 }
                 .onEnded { _ in
                     if let txn = dragTxn { model.store.commit(txn); dragTxn = nil; dragPath = nil }
+                    model.selectedKeyframe = .init(path: path, t: dragLastT)
                 })
     }
+
+    struct EasingTarget: Identifiable { let path: String; let t: Double; var id: String { "\(path)@\(t)" } }
 
     // MARK: Helpers
 

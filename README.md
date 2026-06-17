@@ -10,6 +10,12 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 14 — timeline polish (done).** Keyframes are now fully editable: click a diamond to
+**select** it (Edit ▸ Delete Keyframe / ⌫ removes it), and click a **segment** between two keys to
+open an **easing popover** (Linear / Ease In-Out / Snappy / Bouncy) — backed by a new kernel
+`SetKeyframeInterp` command so presets can switch between linear, bezier (with handles), and spring.
+77 tests.
+
 **Phase 13 — transform gizmos (done).** Canvas direct-manipulation is now complete: **corner
 handles scale** (uniform, about the layer's anchor) and a **rotate handle** above the box rotates,
 alongside the existing move. A press routes by what it lands on (handle → scale/rotate, body →

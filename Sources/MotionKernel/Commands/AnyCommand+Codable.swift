@@ -72,6 +72,10 @@ extension AnyCommand {
                                       t: try c.decode(TimeInterval.self, forKey: .t),
                                       easeIn: try c.decodeIfPresent(ControlPoint.self, forKey: .easeIn),
                                       easeOut: try c.decodeIfPresent(ControlPoint.self, forKey: .easeOut))
+        case "SetKeyframeInterp":
+            self = .setKeyframeInterp(path: try c.decode(String.self, forKey: .path),
+                                      t: try c.decode(TimeInterval.self, forKey: .t),
+                                      interp: try Interpolation(from: decoder))
         case "AddAsset":
             self = .addAsset(asset: try c.decode(Asset.self, forKey: .asset))
         case "RemoveAsset":
@@ -134,6 +138,11 @@ extension AnyCommand {
             try c.encode(t, forKey: .t)
             try c.encodeIfPresent(easeIn, forKey: .easeIn)
             try c.encodeIfPresent(easeOut, forKey: .easeOut)
+        case .setKeyframeInterp(let path, let t, let interp):
+            try c.encode("SetKeyframeInterp", forKey: .type)
+            try c.encode(path, forKey: .path)
+            try c.encode(t, forKey: .t)
+            try interp.encode(to: encoder) // writes interp (+ spring)
         case .addAsset(let asset):
             try c.encode("AddAsset", forKey: .type)
             try c.encode(asset, forKey: .asset)

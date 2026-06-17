@@ -15,6 +15,7 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case removeKeyframe(path: String, t: TimeInterval)
     case moveKeyframes(moves: [KeyframeMove])
     case setKeyframeEasing(path: String, t: TimeInterval, easeIn: ControlPoint?, easeOut: ControlPoint?)
+    case setKeyframeInterp(path: String, t: TimeInterval, interp: Interpolation)
     case addAsset(asset: Asset)
     case removeAsset(assetId: EntityID)
     case setCompositionSetting(compId: EntityID, setting: CompositionSetting)
@@ -64,7 +65,8 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
                 }
             }
         case .setProperty(let path, _), .setKeyframe(let path, _),
-             .removeKeyframe(let path, _), .setKeyframeEasing(let path, _, _, _):
+             .removeKeyframe(let path, _), .setKeyframeEasing(let path, _, _, _),
+             .setKeyframeInterp(let path, _, _):
             let pp = try PropertyPath(path)
             let (compIdx, layerIdx) = try locateLayer(pp.layerId, in: doc)
             // Confirm the path resolves to a real slot, and times are in range.
@@ -137,6 +139,8 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
             try mutateSlot(path: path, in: &doc) { $0.removeKeyframe(at: t) }
         case .setKeyframeEasing(let path, let t, let easeIn, let easeOut):
             try mutateSlot(path: path, in: &doc) { $0.setSegmentEasing(at: t, easeIn: easeIn, easeOut: easeOut) }
+        case .setKeyframeInterp(let path, let t, let interp):
+            try mutateSlot(path: path, in: &doc) { $0.setInterp(at: t, interp) }
         case .moveKeyframes(let moves):
             for m in moves {
                 try mutateSlot(path: m.path, in: &doc) { $0.moveKeyframe(from: m.oldT, to: m.newT) }
