@@ -81,6 +81,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func undo(_ sender: Any?) { model.store.undo() }
+    @objc func redo(_ sender: Any?) { model.store.redo() }
+
     private func presentError(_ error: Error) {
         let alert = NSAlert()
         alert.messageText = "Operation failed"
@@ -123,6 +126,17 @@ func buildMainMenu(target: AppDelegate) {
     fileMenu.addItem(.separator())
     add("Export Movie…", #selector(AppDelegate.exportMovie(_:)), "e")
     fileItem.submenu = fileMenu
+
+    let editItem = NSMenuItem()
+    mainMenu.addItem(editItem)
+    let editMenu = NSMenu(title: "Edit")
+    let undo = NSMenuItem(title: "Undo", action: #selector(AppDelegate.undo(_:)), keyEquivalent: "z")
+    undo.target = target
+    editMenu.addItem(undo)
+    let redo = NSMenuItem(title: "Redo", action: #selector(AppDelegate.redo(_:)), keyEquivalent: "Z")
+    redo.target = target
+    editMenu.addItem(redo)
+    editItem.submenu = editMenu
 
     NSApp.mainMenu = mainMenu
 }

@@ -44,4 +44,17 @@ public struct Affine2D: Sendable, Equatable {
     public func apply(to p: Vec2) -> Vec2 {
         Vec2(p.x * a + p.y * c + tx, p.x * b + p.y * d + ty)
     }
+
+    public var determinant: Double { a * d - b * c }
+
+    /// Inverse transform (nil if singular). `m.inverted()?.apply(to: m.apply(to: p)) == p`.
+    /// Used for canvas hit-testing: map a comp-space point into a layer's local space.
+    public func inverted() -> Affine2D? {
+        let det = determinant
+        guard abs(det) > 1e-12 else { return nil }
+        let inv = 1 / det
+        let ia = d * inv, ib = -b * inv, ic = -c * inv, id = a * inv
+        return Affine2D(a: ia, b: ib, c: ic, d: id,
+                        tx: -(tx * ia + ty * ic), ty: -(tx * ib + ty * id))
+    }
 }

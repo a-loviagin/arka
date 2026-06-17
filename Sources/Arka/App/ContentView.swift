@@ -10,13 +10,17 @@ struct ContentView: View {
     private var playback: PlaybackController { model.playback }
 
     var body: some View {
-        VStack(spacing: 0) {
-            MetalCanvasView(model: model)
-                .frame(minWidth: 480, minHeight: 270)
-                .background(Color.black)
-            transportBar
+        HStack(spacing: 0) {
+            VStack(spacing: 0) {
+                CanvasArea(model: model)
+                    .frame(minWidth: 480, minHeight: 270)
+                transportBar
+            }
+            Divider()
+            InspectorView(model: model)
+                .frame(width: 240)
         }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(minWidth: 860, minHeight: 480)
     }
 
     private var transportBar: some View {

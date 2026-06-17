@@ -31,6 +31,9 @@ final class CanvasNSView: NSView {
 
     override func makeBackingLayer() -> CALayer { CAMetalLayer() }
 
+    // Display-only: let mouse events fall through to the SwiftUI selection/drag overlay above it.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateDrawableSize()

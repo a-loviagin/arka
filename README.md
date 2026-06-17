@@ -10,6 +10,15 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 10 — editor v0.1 (done).** The `CommandStore` (commands + snapshot undo) now drives the
+UI (editor-ui.md §1-2). `DocumentModel` owns the store; the document is an observable mirror
+refreshed on every command. On the canvas you can **click to select** (CPU hit-test against the
+evaluated scene — kernel `HitTester`) and **drag to move** (one transaction → `SetProperty`, or
+`SetKeyframe` at the playhead if the track is animated). A SwiftUI overlay draws the selection box
++ handles; an inspector shows the selected layer with a live opacity slider that writes through
+commands. ⌘Z / ⇧⌘Z undo/redo, ⌘O/⌘S/⌘E for open/save/export. Pure pieces (hit-test, viewport,
+affine inverse) are kernel-tested. 71 tests.
+
 **Phase 9 — `.motion` save/open (done).** The self-contained package format (export-and-format.md
 §5): `MotionPackage` reads/writes a bundle directory (`document.json` + content-addressed `assets/`
 + `thumbnail.png`), with content-addressing (`ContentHash`), migration-on-open (`SchemaMigrator`),

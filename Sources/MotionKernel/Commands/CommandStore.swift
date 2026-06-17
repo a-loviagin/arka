@@ -122,6 +122,17 @@ public final class CommandStore {
         return undoStack.count > before
     }
 
+    /// Replace the whole document (e.g. opening a file or starting a new one), clearing history.
+    /// Not undoable — opening a document is a fresh editing session.
+    public func replaceDocument(_ document: MotionDocument) {
+        precondition(open == nil, "replaceDocument during an open transaction")
+        self.document = document
+        undoStack.removeAll()
+        redoStack.removeAll()
+        selection = .empty
+        onChange?(.full)
+    }
+
     // MARK: Undo / Redo
 
     public var canUndo: Bool { !undoStack.isEmpty }
