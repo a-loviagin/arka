@@ -52,6 +52,11 @@ public enum SystemPrompt {
           content can also be {"type":"null"} (a transform-only parent) or text — text requires all of:
           {"type":"text","string":"Hi","fontFamily":"Helvetica","fontSize":{"static":48},
            "fillColor":{"static":"#000000"},"alignment":"left"}.
+          For a custom outline use geometry "path" with a `path` of subpaths (points in layer-local
+          space; "outTangent"/"inTangent" handles relative to a point make curves, omit for corners):
+          {"type":"shape","geometry":"path","fillColor":{"static":"#3366FF"},
+           "path":{"subpaths":[{"closed":true,"vertices":[
+             {"point":[50,0]},{"point":[100,100]},{"point":[0,100]}]}]}}.
         - RemoveLayer: {"type":"RemoveLayer","layerId":"<id>"}
         - SetLayerParent / ReorderLayer / SetLayerVisible: by layerId.
 

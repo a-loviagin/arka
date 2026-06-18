@@ -81,6 +81,9 @@ public struct SceneEvaluator {
     public func layerSize(of layer: Layer, at t: TimeInterval) -> Vec2 {
         switch layer.content {
         case .shape(let s):
+            if s.geometry == .path, let b = s.path?.bounds {
+                return Vec2(b.max.x - b.min.x, b.max.y - b.min.y)
+            }
             return s.size.resolve(at: t)
         case .image(let i):
             return document.asset(i.assetId)?.pixelSize ?? .zero

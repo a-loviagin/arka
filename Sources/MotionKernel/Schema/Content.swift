@@ -63,6 +63,69 @@ public enum ShapeGeometry: String, Codable, Sendable, Equatable {
     case rect, ellipse, path
 }
 
+/// A vector path (properties-and-commands.md §1, Tier 2): one or more subpaths of cubic-bezier
+/// vertices in layer-local points (origin top-left, y-down). Each vertex carries optional in/out
+/// tangent handles *relative to its point* — both zero means a corner (straight segments). Static
+/// for v1 (structural); path morphing (animated vertices) is a later extension.
+public struct PathData: Codable, Sendable, Equatable {
+    public struct Vertex: Codable, Sendable, Equatable {
+        public var point: Vec2
+        public var inTangent: Vec2   // handle for the incoming segment, relative to `point`
+        public var outTangent: Vec2  // handle for the outgoing segment, relative to `point`
+        public init(point: Vec2, inTangent: Vec2 = .zero, outTangent: Vec2 = .zero) {
+            self.point = point; self.inTangent = inTangent; self.outTangent = outTangent
+        }
+        private enum CodingKeys: String, CodingKey { case point, inTangent, outTangent }
+        public init(from d: any Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            point = try c.decode(Vec2.self, forKey: .point)
+            inTangent = try c.decodeIfPresent(Vec2.self, forKey: .inTangent) ?? .zero
+            outTangent = try c.decodeIfPresent(Vec2.self, forKey: .outTangent) ?? .zero
+        }
+        public func encode(to e: any Encoder) throws {
+            var c = e.container(keyedBy: CodingKeys.self)
+            try c.encode(point, forKey: .point)
+            if inTangent != .zero { try c.encode(inTangent, forKey: .inTangent) }
+            if outTangent != .zero { try c.encode(outTangent, forKey: .outTangent) }
+        }
+    }
+
+    public struct Subpath: Codable, Sendable, Equatable {
+        public var vertices: [Vertex]
+        public var closed: Bool
+        public init(vertices: [Vertex], closed: Bool = true) {
+            self.vertices = vertices; self.closed = closed
+        }
+        private enum CodingKeys: String, CodingKey { case vertices, closed }
+        public init(from d: any Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            vertices = try c.decode([Vertex].self, forKey: .vertices)
+            closed = try c.decodeIfPresent(Bool.self, forKey: .closed) ?? true
+        }
+        public func encode(to e: any Encoder) throws {
+            var c = e.container(keyedBy: CodingKeys.self)
+            try c.encode(vertices, forKey: .vertices)
+            if !closed { try c.encode(closed, forKey: .closed) }
+        }
+    }
+
+    public var subpaths: [Subpath]
+    public init(subpaths: [Subpath]) { self.subpaths = subpaths }
+
+    /// Axis-aligned bounds of all vertex points (tangent overshoot ignored — close enough for
+    /// hit-testing/selection). nil when empty.
+    public var bounds: (min: Vec2, max: Vec2)? {
+        let points = subpaths.flatMap { $0.vertices.map(\.point) }
+        guard let first = points.first else { return nil }
+        var lo = first, hi = first
+        for p in points.dropFirst() {
+            lo = Vec2(Swift.min(lo.x, p.x), Swift.min(lo.y, p.y))
+            hi = Vec2(Swift.max(hi.x, p.x), Swift.max(hi.y, p.y))
+        }
+        return (lo, hi)
+    }
+}
+
 public struct ShapeContent: Codable, Sendable, Equatable {
     public var geometry: ShapeGeometry
     /// Rect/ellipse size in points (distinct from `scale` — animating `size` keeps stroke width).
@@ -72,24 +135,28 @@ public struct ShapeContent: Codable, Sendable, Equatable {
     public var strokeWidth: AnimatableValue<Double>?
     /// Scalar (uniform) corner radius for Tier 1. Per-corner vec4 is a Tier-2 extension.
     public var cornerRadius: AnimatableValue<Double>?
+    /// Vector outline, used when `geometry == .path`. Ignored for rect/ellipse.
+    public var path: PathData?
 
     public init(geometry: ShapeGeometry,
                 size: AnimatableValue<Vec2> = .static(Vec2(100, 100)),
                 fillColor: AnimatableValue<ColorValue>? = .static(.black),
                 strokeColor: AnimatableValue<ColorValue>? = nil,
                 strokeWidth: AnimatableValue<Double>? = nil,
-                cornerRadius: AnimatableValue<Double>? = nil) {
+                cornerRadius: AnimatableValue<Double>? = nil,
+                path: PathData? = nil) {
         self.geometry = geometry
         self.size = size
         self.fillColor = fillColor
         self.strokeColor = strokeColor
         self.strokeWidth = strokeWidth
         self.cornerRadius = cornerRadius
+        self.path = path
     }
 
     // Omitted = default (schema §1): only `geometry` is required; size/fill default, the rest nil.
     private enum CodingKeys: String, CodingKey {
-        case geometry, size, fillColor, strokeColor, strokeWidth, cornerRadius
+        case geometry, size, fillColor, strokeColor, strokeWidth, cornerRadius, path
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -99,6 +166,7 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         strokeColor = try c.decodeIfPresent(AnimatableValue<ColorValue>.self, forKey: .strokeColor)
         strokeWidth = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .strokeWidth)
         cornerRadius = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .cornerRadius)
+        path = try c.decodeIfPresent(PathData.self, forKey: .path)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -108,6 +176,7 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         try c.encodeIfPresent(strokeColor, forKey: .strokeColor)
         try c.encodeIfPresent(strokeWidth, forKey: .strokeWidth)
         try c.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
+        try c.encodeIfPresent(path, forKey: .path)
     }
 }
 

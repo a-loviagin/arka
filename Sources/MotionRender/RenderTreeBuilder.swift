@@ -63,9 +63,16 @@ public struct RenderTreeBuilder {
 
             switch layer.content {
             case .shape(let shape):
-                guard let resolved = resolveShape(shape, at: t) else { continue }
-                nodes.append(.leaf(RenderItem(world: world, opacity: rel,
-                                              content: .shape(resolved), effects: effects)))
+                if shape.geometry == .path {
+                    let fill = SIMD4<Float>(shape.fillColor?.resolve(at: t) ?? .clear)
+                    guard let p = shape.path, let mesh = PathTessellator.mesh(p, fill: fill) else { continue }
+                    nodes.append(.leaf(RenderItem(world: world, opacity: rel,
+                                                  content: .path(mesh), effects: effects)))
+                } else {
+                    guard let resolved = resolveShape(shape, at: t) else { continue }
+                    nodes.append(.leaf(RenderItem(world: world, opacity: rel,
+                                                  content: .shape(resolved), effects: effects)))
+                }
             case .text(let text):
                 guard let engine = textEngine else { continue }
                 let fontSize = text.fontSize.resolve(at: t)

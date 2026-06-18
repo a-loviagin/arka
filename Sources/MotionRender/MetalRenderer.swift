@@ -16,6 +16,13 @@ struct InstanceUniform {
     var opacity: Float
 }
 
+/// Per-path uniform (tessellated vector fill). **Must match `PathUniform` in Shaders.swift.**
+struct PathUniform {
+    var clipFromLocal: simd_float3x3
+    var fill: SIMD4<Float>
+    var opacity: Float
+}
+
 /// Per-instance textured-quad data (glyphs / images). **Must match `GlyphInstance` in Shaders.swift.**
 struct GlyphInstance {
     var clipFromLocal: simd_float3x3
@@ -37,6 +44,7 @@ public final class MetalRenderer {
     public let device: MTLDevice
     private let queue: MTLCommandQueue
     private let shapePipeline: MTLRenderPipelineState
+    private let pathPipeline: MTLRenderPipelineState
     private let glyphPipeline: MTLRenderPipelineState
     private let imagePipeline: MTLRenderPipelineState
     private let blurPipeline: MTLRenderPipelineState
@@ -83,6 +91,7 @@ public final class MetalRenderer {
             return try device.makeRenderPipelineState(descriptor: desc)
         }
         self.shapePipeline = try pipeline("shape_vertex", "shape_fragment")
+        self.pathPipeline = try pipeline("path_vertex", "path_fragment")
         self.glyphPipeline = try pipeline("glyph_vertex", "glyph_fragment")
         self.imagePipeline = try pipeline("glyph_vertex", "image_fragment")
         self.blurPipeline = try pipeline("fullscreen_vertex", "blur_fragment", blend: false)
@@ -113,6 +122,7 @@ public final class MetalRenderer {
 
     private enum DrawOp {
         case shapes(base: Int, count: Int)
+        case path(buffer: MTLBuffer, count: Int, uniform: PathUniform)
         case glyphs(base: Int, count: Int, texture: MTLTexture)
         case image(base: Int, texture: MTLTexture)
         case composite(CompositeOp)
@@ -266,6 +276,13 @@ public final class MetalRenderer {
                 if pendingShapeCount == 0 { pendingShapeBase = shapes.count }
                 shapes.append(shapeInstance(s, clip: clip, opacity: item.opacity))
                 pendingShapeCount += 1
+            case .path(let mesh):
+                flushShapes()
+                if let buf = makeBuffer(mesh.vertices) {
+                    transient.append(buf)
+                    ops.append(.path(buffer: buf, count: mesh.vertices.count,
+                                     uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: item.opacity)))
+                }
             case .glyphRun(let run):
                 flushShapes()
                 let base = glyphs.count
@@ -290,6 +307,8 @@ public final class MetalRenderer {
             switch op {
             case .shapes(let base, let count):
                 if let buf = shapeBuf { drawShapes(enc, buf, base: base, count: count) }
+            case .path(let buffer, let count, let uniform):
+                drawPath(enc, buffer, count: count, uniform: uniform)
             case .glyphs(let base, let count, let texture):
                 if let buf = glyphBuf { drawTextured(enc, glyphPipeline, buf, base: base, count: count, texture: texture) }
             case .image(let base, let texture):
@@ -337,6 +356,12 @@ public final class MetalRenderer {
             if let buf = makeBuffer([shapeInstance(s, clip: clip, opacity: 1)]) {
                 transient.append(buf); drawShapes(enc, buf, base: 0, count: 1)
             }
+        case .path(let mesh):
+            if let buf = makeBuffer(mesh.vertices) {
+                transient.append(buf)
+                drawPath(enc, buf, count: mesh.vertices.count,
+                         uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: 1))
+            }
         case .glyphRun(let run):
             let insts = glyphInstances(run, clip: clip, opacity: 1)
             if let buf = makeBuffer(insts) {
@@ -383,6 +408,15 @@ public final class MetalRenderer {
         enc.setVertexBytes(&b, length: 4, index: 1)
         enc.setFragmentBuffer(buf, offset: 0, index: 0)
         enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
+    }
+
+    private func drawPath(_ enc: MTLRenderCommandEncoder, _ buf: MTLBuffer, count: Int, uniform: PathUniform) {
+        var u = uniform
+        enc.setRenderPipelineState(pathPipeline)
+        enc.setVertexBuffer(buf, offset: 0, index: 0)
+        enc.setVertexBytes(&u, length: MemoryLayout<PathUniform>.stride, index: 1)
+        enc.setFragmentBytes(&u, length: MemoryLayout<PathUniform>.stride, index: 0)
+        enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
     }
 
     private func drawTextured(_ enc: MTLRenderCommandEncoder, _ pipeline: MTLRenderPipelineState,

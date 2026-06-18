@@ -95,6 +95,31 @@ enum ShaderSource {
         return float4(rgb * a, a);
     }
 
+    // ---- Vector paths (tessellated fill) ---------------------------------------------------
+    // A flat triangle list in layer-local space, one uniform per path (transform + fill + opacity).
+    struct PathUniform {
+        float3x3 clipFromLocal;
+        float4 fill;       // straight rgba
+        float opacity;
+    };
+
+    struct PathOut { float4 position [[position]]; };
+
+    vertex PathOut path_vertex(uint vid [[vertex_id]],
+                               constant float2 *verts [[buffer(0)]],
+                               constant PathUniform &u [[buffer(1)]]) {
+        float3 clip = u.clipFromLocal * float3(verts[vid], 1.0);
+        PathOut o;
+        o.position = float4(clip.xy, 0.0, 1.0);
+        return o;
+    }
+
+    fragment float4 path_fragment(PathOut in [[stage_in]],
+                                  constant PathUniform &u [[buffer(0)]]) {
+        float a = u.fill.a * u.opacity;
+        return float4(u.fill.rgb * a, a); // pre-multiplied
+    }
+
     // ---- Textured quads (glyphs / images) --------------------------------------------------
     struct GlyphInstance {
         float3x3 clipFromLocal;

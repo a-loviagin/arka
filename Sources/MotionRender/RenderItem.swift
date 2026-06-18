@@ -56,6 +56,7 @@ enum ResolvedEffect {
 /// ordered draw walk so z-order is always respected.
 enum RenderContent {
     case shape(ResolvedShape)
+    case path(PathMesh)
     case glyphRun(GlyphRun)
     case image(ImageQuad)
 }
