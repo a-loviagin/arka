@@ -12,6 +12,7 @@ let package = Package(
     products: [
         .library(name: "MotionKernel", targets: ["MotionKernel"]),
         .library(name: "MotionRender", targets: ["MotionRender"]),
+        .library(name: "MotionAI", targets: ["MotionAI"]),
         .executable(name: "Arka", targets: ["Arka"]),
     ],
     targets: [
@@ -36,10 +37,21 @@ let package = Package(
             name: "MotionRenderTests",
             dependencies: ["MotionRender", "MotionKernel"]
         ),
+        // The AI generation pipeline (Foundation-only, Linux-clean): request/response DTOs,
+        // validate/repair orchestration, prompt assembly, Anthropic client, offline heuristic
+        // generator. Shared by the app and the server.
+        .target(
+            name: "MotionAI",
+            dependencies: ["MotionKernel"]
+        ),
+        .testTarget(
+            name: "MotionAITests",
+            dependencies: ["MotionAI", "MotionKernel"]
+        ),
         // The macOS app: SwiftUI shell + AppKit/Metal canvas.
         .executableTarget(
             name: "Arka",
-            dependencies: ["MotionKernel", "MotionRender"]
+            dependencies: ["MotionKernel", "MotionRender", "MotionAI"]
         ),
     ]
 )
