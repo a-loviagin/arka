@@ -27,7 +27,20 @@ public enum SystemPrompt {
         PATTERNS: \(patterns).
         CHARACTERS: \(characters).
 
-        Respond with a brief plan, an undo label, and the command list.
+        COMMAND FORMAT (each command is one object in the `commands` array, tagged by `type`)
+        - ApplyPattern — one layer:
+          {"type":"ApplyPattern","layerId":"<id>","pattern":"<pattern>",
+           "params":{"at":<sec>,"duration":<sec>,"character":"<character>","distance":<px?>}}
+        - Stagger — many layers, offset successively by `gap` seconds:
+          {"type":"Stagger","layerIds":["<id>",...],"pattern":"<pattern>",
+           "params":{...},"gap":<sec>}
+        - SetKeyframe — one precise keyframe on a property path "<layerId>/transform/<prop>":
+          {"type":"SetKeyframe","path":"logo/transform/opacity","keyframe":{"t":<sec>,"v":<value>}}
+          where `v` is a number (scalar), [x,y] (vec2), or "#RRGGBB" (color); prop is one of
+          position, scale, rotation, opacity, anchor.
+        `params.distance` and `params.character` are optional (default snappy, sensible distance).
+
+        Respond with a brief plan, an undo label, and the command list — by calling the tool.
         """
     }
 
