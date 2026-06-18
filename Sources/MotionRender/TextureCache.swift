@@ -40,12 +40,14 @@ public final class TextureCache: TextureProvider {
     @discardableResult
     public func register(id: EntityID, cgImage cg: CGImage) -> MTLTexture? {
         if let t = cache[id] { return t }
-        guard let texture = makeTexture(from: cg) else { return nil }
+        guard let texture = Self.makeTexture(from: cg, device: device) else { return nil }
         cache[id] = texture
         return texture
     }
 
-    private func makeTexture(from cg: CGImage) -> MTLTexture? {
+    /// Decode a CGImage into a premultiplied rgba8 (top-left origin) Metal texture. Shared by the
+    /// image cache and the video frame provider.
+    static func makeTexture(from cg: CGImage, device: MTLDevice) -> MTLTexture? {
         let w = cg.width, h = cg.height
         guard w > 0, h > 0 else { return nil }
         var bytes = [UInt8](repeating: 0, count: w * h * 4)

@@ -71,7 +71,8 @@ final class CanvasNSView: NSView {
               let drawable = metalLayer.nextDrawable() else { return }
         let t = model.playback.currentTime
         let nodes = RenderTreeBuilder(document: model.document, textEngine: model.textEngine,
-                                      textures: model.textures).build(compId: comp.id, at: t)
+                                      textures: model.textures, video: model.videoProvider,
+                                      assetBaseURL: model.assetBaseURL).build(compId: comp.id, at: t)
         let vp = SIMD2<Float>(Float(metalLayer.drawableSize.width),
                               Float(metalLayer.drawableSize.height))
         let bg = comp.backgroundColor

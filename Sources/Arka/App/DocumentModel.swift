@@ -25,6 +25,9 @@ final class DocumentModel {
 
     private(set) var assetBytes: [String: Data]
     private(set) var textures: TextureCache?
+    let videoProvider: VideoFrameProvider?
+    /// Base dir for resolving relative asset paths (set when a `.motion` package is opened).
+    private(set) var assetBaseURL: URL?
 
     let device: MTLDevice?
     let renderer: MetalRenderer?
@@ -39,6 +42,7 @@ final class DocumentModel {
         self.device = dev
         self.renderer = dev.flatMap { try? MetalRenderer(device: $0) }
         self.textEngine = dev.flatMap { TextEngine(device: $0) }
+        self.videoProvider = dev.map { VideoFrameProvider(device: $0) }
         self.playback = PlaybackController(duration: doc.mainComposition?.duration ?? 5)
 
         var bytes: [String: Data] = [:]
@@ -313,6 +317,7 @@ final class DocumentModel {
         store.replaceDocument(doc) // also clears selection via onChange
         assetBytes = bytes
         textures = cache
+        assetBaseURL = url // video assets resolve relative to the package dir
         playback.seek(to: 0)
         playback.duration = doc.mainComposition?.duration ?? 5
     }

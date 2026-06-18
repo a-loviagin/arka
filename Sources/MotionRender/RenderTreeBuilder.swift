@@ -13,12 +13,23 @@ public struct RenderTreeBuilder {
     let document: MotionDocument
     var textEngine: TextEngine?
     weak var textures: (any TextureProvider)?
+    var video: VideoFrameProvider?
+    /// Base URL for resolving relative asset paths (a `.motion` package dir). nil → treat asset
+    /// paths as absolute file paths.
+    var assetBaseURL: URL?
 
     public init(document: MotionDocument, textEngine: TextEngine? = nil,
-                textures: (any TextureProvider)? = nil) {
+                textures: (any TextureProvider)? = nil,
+                video: VideoFrameProvider? = nil, assetBaseURL: URL? = nil) {
         self.document = document
         self.textEngine = textEngine
         self.textures = textures
+        self.video = video
+        self.assetBaseURL = assetBaseURL
+    }
+
+    private func assetURL(_ asset: Asset) -> URL {
+        assetBaseURL?.appending(path: asset.path) ?? URL(fileURLWithPath: asset.path)
     }
 
     private static let rootKey = EntityID("__root__")
@@ -100,8 +111,17 @@ public struct RenderTreeBuilder {
                     world: world, opacity: rel, effects: effects,
                     compSize: SIMD2<Float>(Float(sub.size.x), Float(sub.size.y)),
                     children: children)))
-            case .video:
-                continue // video render path lands next
+            case .video(let v):
+                guard let provider = video, let asset = document.asset(v.assetId) else { continue }
+                let url = assetURL(asset)
+                guard let texture = provider.texture(for: v, asset: asset, assetURL: url, at: t) else { continue }
+                let size = asset.pixelSize ?? provider.pixelSize(for: asset, assetURL: url)
+                    ?? Vec2(Double(texture.width), Double(texture.height))
+                nodes.append(.leaf(RenderItem(world: world, opacity: rel,
+                                              content: .image(ImageQuad(
+                                                texture: texture,
+                                                size: SIMD2<Float>(Float(size.x), Float(size.y)))),
+                                              effects: effects)))
             case .group, .null:
                 let kids = childrenOf[layer.id] ?? []
                 guard !kids.isEmpty else { continue }
