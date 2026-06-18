@@ -53,10 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do { try model.open(url) } catch { presentError(error) }
     }
 
-    @objc func exportMovie(_ sender: Any?) {
+    /// Shared export plumbing: prompt for a destination, then run `work` off the main thread
+    /// (building its own renderer so nothing non-Sendable is captured), revealing the result.
+    private func runExport(suggestedName: String, contentTypes: [UTType],
+                           _ work: @escaping @Sendable (MotionDocument, MetalRenderer, TextureCache, Composition, URL) throws -> Void) {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.mpeg4Movie]
-        panel.nameFieldStringValue = "arka.mp4"
+        if !contentTypes.isEmpty { panel.allowedContentTypes = contentTypes }
+        panel.nameFieldStringValue = suggestedName
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let doc = model.document
@@ -66,10 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let comp = doc.mainComposition else { return }
             let cache = TextureCache(device: device)
             cache.register(id: DemoDocument.logoAssetId, cgImage: DemoDocument.makeLogoImage())
-            let exporter = VideoExporter(renderer: renderer, textures: cache)
             do {
-                try exporter.export(document: doc, compId: comp.id,
-                                    settings: .standard(for: comp), to: url)
+                try work(doc, renderer, cache, comp, url)
                 DispatchQueue.main.async { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             } catch {
                 let message = error.localizedDescription
@@ -78,6 +79,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     alert.informativeText = message; alert.runModal()
                 }
             }
+        }
+    }
+
+    @objc func exportMovie(_ sender: Any?) {
+        runExport(suggestedName: "arka.mp4", contentTypes: [.mpeg4Movie]) { doc, renderer, cache, comp, url in
+            try VideoExporter(renderer: renderer, textures: cache)
+                .export(document: doc, compId: comp.id, settings: .standard(for: comp), to: url)
+        }
+    }
+
+    @objc func exportProRes(_ sender: Any?) {
+        runExport(suggestedName: "arka.mov", contentTypes: [.quickTimeMovie]) { doc, renderer, cache, comp, url in
+            try VideoExporter(renderer: renderer, textures: cache)
+                .export(document: doc, compId: comp.id, settings: .proResAlpha(for: comp), to: url)
+        }
+    }
+
+    @objc func exportGIF(_ sender: Any?) {
+        runExport(suggestedName: "arka.gif", contentTypes: [.gif]) { doc, renderer, cache, comp, url in
+            try GIFExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                   width: Int(comp.size.x), height: Int(comp.size.y), fps: 25,
+                                   startTime: 0, endTime: comp.duration, to: url)
+        }
+    }
+
+    @objc func exportPNGSequence(_ sender: Any?) {
+        runExport(suggestedName: "arka-frames", contentTypes: []) { doc, renderer, cache, comp, url in
+            try ImageSequenceExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                             width: Int(comp.size.x), height: Int(comp.size.y), fps: comp.fps,
+                                             startTime: 0, endTime: comp.duration, transparent: true, to: url)
         }
     }
 
@@ -126,6 +157,9 @@ func buildMainMenu(target: AppDelegate) {
     add("Save Package…", #selector(AppDelegate.savePackage(_:)), "s")
     fileMenu.addItem(.separator())
     add("Export Movie…", #selector(AppDelegate.exportMovie(_:)), "e")
+    add("Export ProRes (Alpha)…", #selector(AppDelegate.exportProRes(_:)), "")
+    add("Export GIF…", #selector(AppDelegate.exportGIF(_:)), "")
+    add("Export PNG Sequence…", #selector(AppDelegate.exportPNGSequence(_:)), "")
     fileItem.submenu = fileMenu
 
     let editItem = NSMenuItem()

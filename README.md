@@ -10,6 +10,11 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 17 — more export formats (done).** ProRes 4444 with alpha (transparent-background MOV),
+animated GIF (ImageIO, fps≤50, centisecond delays, looping), and PNG image sequences (numbered,
+optional alpha) — all reusing the offscreen render path; File menu items for each. Verified by
+exporting and reading each back (dimensions / frame count / pixels). 89 tests.
+
 **Phase 16 — motion pattern library + presets (done).** ai-pipeline.md §9 step 1 (no AI yet): a
 kernel `PatternLibrary` of ~15 hand-tuned, parametric patterns (fade/pop/scale-reveal, slide
 in/out ×4, pulse/bounce/shake) across four `MotionCharacter`s (gentle/snappy/bouncy/dramatic) that

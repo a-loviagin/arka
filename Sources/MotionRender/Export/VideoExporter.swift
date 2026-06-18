@@ -12,7 +12,7 @@ import MotionKernel
 /// textures (zero-copy via `CVMetalTextureCache`) and feed an `AVAssetWriter`.
 public final class VideoExporter {
     public struct Settings: Sendable {
-        public enum Codec: Sendable { case h264, hevc }
+        public enum Codec: Sendable { case h264, hevc, proRes4444 }
         public var width: Int
         public var height: Int
         public var fps: Double
@@ -20,11 +20,16 @@ public final class VideoExporter {
         public var endTime: TimeInterval
         public var codec: Codec
         /// Quality as bits per pixel per frame (~0.12 good, ~0.2 high — export-and-format.md §1).
+        /// Ignored by ProRes (it's a fixed-quality intra codec).
         public var bitsPerPixelPerFrame: Double
+        /// ProRes 4444 only: render onto a transparent background so the alpha channel is preserved
+        /// (export-and-format.md §1, the "transparent background" toggle).
+        public var transparentBackground: Bool
 
         public init(width: Int, height: Int, fps: Double,
                     startTime: TimeInterval, endTime: TimeInterval,
-                    codec: Codec = .h264, bitsPerPixelPerFrame: Double = 0.12) {
+                    codec: Codec = .h264, bitsPerPixelPerFrame: Double = 0.12,
+                    transparentBackground: Bool = false) {
             // H.264/HEVC require even dimensions; round down.
             self.width = max(width - (width % 2), 2)
             self.height = max(height - (height % 2), 2)
@@ -33,12 +38,23 @@ public final class VideoExporter {
             self.endTime = endTime
             self.codec = codec
             self.bitsPerPixelPerFrame = bitsPerPixelPerFrame
+            self.transparentBackground = transparentBackground
+        }
+
+        var fileType: AVFileType { codec == .proRes4444 ? .mov : .mp4 }
+        var avCodec: AVVideoCodecType {
+            switch codec { case .h264: .h264; case .hevc: .hevc; case .proRes4444: .proRes4444 }
         }
 
         /// 1× full-comp H.264 preset.
         public static func standard(for comp: Composition) -> Settings {
             Settings(width: Int(comp.size.x), height: Int(comp.size.y), fps: comp.fps,
                      startTime: 0, endTime: comp.duration)
+        }
+        /// 1× full-comp ProRes 4444 preset with a transparent background.
+        public static func proResAlpha(for comp: Composition) -> Settings {
+            Settings(width: Int(comp.size.x), height: Int(comp.size.y), fps: comp.fps,
+                     startTime: 0, endTime: comp.duration, codec: .proRes4444, transparentBackground: true)
         }
     }
 
@@ -81,26 +97,27 @@ public final class VideoExporter {
         }
         try? FileManager.default.removeItem(at: url)
 
-        let fileType: AVFileType = .mp4
-        let writer = try AVAssetWriter(url: url, fileType: fileType)
+        let writer = try AVAssetWriter(url: url, fileType: settings.fileType)
 
-        let bitrate = Int(settings.bitsPerPixelPerFrame
-                          * Double(settings.width * settings.height) * settings.fps)
-        var compression: [String: Any] = [AVVideoAverageBitRateKey: bitrate]
-        compression[AVVideoExpectedSourceFrameRateKey] = Int(settings.fps.rounded())
-
-        let codec: AVVideoCodecType = settings.codec == .hevc ? .hevc : .h264
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: codec,
+        var videoSettings: [String: Any] = [
+            AVVideoCodecKey: settings.avCodec,
             AVVideoWidthKey: settings.width,
             AVVideoHeightKey: settings.height,
-            AVVideoCompressionPropertiesKey: compression,
-            AVVideoColorPropertiesKey: [
+        ]
+        if settings.codec != .proRes4444 {
+            // ProRes is fixed-quality intra; bitrate + 709 color tag apply to H.264/HEVC.
+            let bitrate = Int(settings.bitsPerPixelPerFrame
+                              * Double(settings.width * settings.height) * settings.fps)
+            videoSettings[AVVideoCompressionPropertiesKey] = [
+                AVVideoAverageBitRateKey: bitrate,
+                AVVideoExpectedSourceFrameRateKey: Int(settings.fps.rounded()),
+            ]
+            videoSettings[AVVideoColorPropertiesKey] = [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
                 AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
                 AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
-            ],
-        ]
+            ]
+        }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         input.expectsMediaDataInRealTime = false
 
@@ -126,7 +143,10 @@ public final class VideoExporter {
 
         let compSize = SIMD2<Float>(Float(comp.size.x), Float(comp.size.y))
         let bg = comp.backgroundColor
-        let clear = SIMD4<Double>(bg.r, bg.g, bg.b, 1) // opaque frames for video
+        // Transparent background (ProRes alpha) clears to zero so uncovered pixels stay transparent.
+        let clear = settings.transparentBackground
+            ? SIMD4<Double>(0, 0, 0, 0)
+            : SIMD4<Double>(bg.r, bg.g, bg.b, 1)
         let duration = max(settings.endTime - settings.startTime, 1.0 / settings.fps)
         let frameCount = max(Int((duration * settings.fps).rounded()), 1)
         let timescale = Int32(max(settings.fps.rounded(), 1))

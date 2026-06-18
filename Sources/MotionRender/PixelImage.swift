@@ -41,16 +41,19 @@ public struct PixelImage: Equatable, Sendable {
 
     // MARK: PNG via ImageIO
 
-    public func pngData() -> Data? {
-        // BGRA bytes → CGImage. Use premultipliedFirst (ARGB) with little-endian = BGRA in memory.
+    /// Reconstruct a `CGImage` from the BGRA bytes (premultipliedFirst + little-endian = BGRA).
+    public func cgImage() -> CGImage? {
         let cs = CGColorSpace(name: CGColorSpace.sRGB)!
         let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
                                 | CGBitmapInfo.byteOrder32Little.rawValue)
-        guard let provider = CGDataProvider(data: Data(bgra) as CFData),
-              let image = CGImage(width: width, height: height, bitsPerComponent: 8,
-                                  bitsPerPixel: 32, bytesPerRow: width * 4, space: cs,
-                                  bitmapInfo: info, provider: provider, decode: nil,
-                                  shouldInterpolate: false, intent: .defaultIntent) else { return nil }
+        guard let provider = CGDataProvider(data: Data(bgra) as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: cs, bitmapInfo: info, provider: provider,
+                       decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    }
+
+    public func pngData() -> Data? {
+        guard let image = cgImage() else { return nil }
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
         else { return nil }
