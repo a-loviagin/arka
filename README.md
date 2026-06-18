@@ -10,6 +10,18 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 18 — AI pipeline + backend service (done).** The whole prompt-to-motion scope
+(ai-pipeline.md §1–7). A new Foundation-only, Linux-clean **`MotionAI`** library: request/response
+DTOs, a **validate/repair `GenerationPipeline`** (scratch-applies each command against the document,
+lints for actual animation, feeds machine-readable errors back to the model, max 2 retries), an
+offline **`HeuristicGenerator`** (keyword → pattern/character → `ApplyPattern`/`Stagger` macro, so
+the feature works with no key), a live **`AnthropicClient`** (raw `URLSession` Messages API, forces a
+single `emit_motion` tool call so output decodes through the same `AnyCommand` Codable), and a shared
+**`GenerationService`**. In the app, a **⌘K prompt panel** generates and applies an edit as one
+`.ai` transaction (one ⌘Z); uses Claude when `ANTHROPIC_API_KEY` is set, else the heuristic. A new
+**`ArkaServer`** (Hummingbird) exposes `POST /generate` running the *same* kernel + pipeline, so the
+`.motion` contract is one codebase client and server. 106 tests.
+
 **Phase 17 — more export formats (done).** ProRes 4444 with alpha (transparent-background MOV),
 animated GIF (ImageIO, fps≤50, centisecond delays, looping), and PNG image sequences (numbered,
 optional alpha) — all reusing the offscreen render path; File menu items for each. Verified by
@@ -151,10 +163,16 @@ boundary tests. Linux CI enforces the no-Apple-frameworks rule.
 ```bash
 swift build
 swift test
+swift run Arka          # the macOS editor (⌘K for the AI prompt)
+swift run ArkaServer    # the backend; GET /health, POST /generate on :8080 (PORT to override)
 ```
+
+The AI features use Claude when `ANTHROPIC_API_KEY` is set in the environment, and fall back to the
+offline heuristic generator otherwise — both the app and the server.
 
 ## What's next
 
-Per `specs/render-engine.md §8` and the per-doc build orders: the Metal render layer (SDF shapes
-→ first moving pixels), then the SwiftUI editor shell, the pattern library + AI pipeline, and
-export. None of those touch `MotionKernel`'s framework-free boundary.
+The core pipeline (kernel → render → editor → export → AI) is in place end to end. Open directions:
+richer command vocabulary for the AI (text/asset edits, multi-step plans), few-shot exemplars and an
+eval harness for generations, a thin client that calls `ArkaServer` instead of the in-process
+generator, and Lottie export. None of those touch `MotionKernel`'s framework-free boundary.
