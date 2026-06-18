@@ -112,6 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func toggleAIPanel(_ sender: Any?) { model.aiPanelVisible.toggle() }
+
     @objc func undo(_ sender: Any?) { model.store.undo() }
     @objc func redo(_ sender: Any?) { model.store.redo() }
     @objc func deleteKeyframe(_ sender: Any?) { model.deleteSelectedKeyframe() }
@@ -179,6 +181,15 @@ func buildMainMenu(target: AppDelegate) {
     del.target = target
     editMenu.addItem(del)
     editItem.submenu = editMenu
+
+    let aiItem = NSMenuItem()
+    mainMenu.addItem(aiItem)
+    let aiMenu = NSMenu(title: "AI")
+    let generate = NSMenuItem(title: "Generate…",
+                              action: #selector(AppDelegate.toggleAIPanel(_:)), keyEquivalent: "k")
+    generate.target = target
+    aiMenu.addItem(generate)
+    aiItem.submenu = aiMenu
 
     NSApp.mainMenu = mainMenu
 }

@@ -4,6 +4,7 @@ import Metal
 import Observation
 import MotionKernel
 import MotionRender
+import MotionAI
 
 /// App-wide state: the live document (owned by a `CommandStore` — the only write path), the current
 /// selection, and the shared GPU resources used to render/export. One device/renderer/text-engine
@@ -235,6 +236,56 @@ final class DocumentModel {
             command = .setKeyframeInterp(path: path, t: t, interp: .spring(.bouncy))
         }
         try? store.perform(command, label: "Easing: \(preset.rawValue)")
+    }
+
+    // MARK: AI (ai-pipeline.md §1,5,7)
+
+    enum AIState: Equatable { case idle, generating, failed(String) }
+    /// Whether the ⌘K prompt panel is showing, and the running state of a generation.
+    var aiPanelVisible = false
+    private(set) var aiState: AIState = .idle
+    /// The conversation so far — prior prompts feed the next request (the conversation is the workflow).
+    private(set) var aiHistory: [String] = []
+
+    /// True when a live LLM backend is configured; otherwise the offline heuristic generator is used.
+    var aiUsesLiveModel: Bool { AnthropicClient.fromEnvironment() != nil }
+
+    /// Run a prompt through the generation pipeline and apply the result as one undoable `.ai`
+    /// transaction. Uses the Anthropic client when `ANTHROPIC_API_KEY` is set, else the offline
+    /// heuristic generator so the panel always works.
+    func generate(prompt: String) async {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let comp = mainComp else { return }
+        guard let digest = DocumentDigest.summarize(document, compId: comp.id,
+                                                    selection: selection, at: playback.currentTime) else {
+            aiState = .failed("no composition to edit")
+            return
+        }
+        aiState = .generating
+        let request = GenerationRequest(prompt: trimmed, mode: .edit, digest: digest,
+                                        playhead: playback.currentTime, history: aiHistory)
+        let generator: any MotionGenerator = AnthropicClient.fromEnvironment() ?? HeuristicGenerator()
+        let pipeline = GenerationPipeline(generator: generator)
+        do {
+            let result = try await pipeline.generate(request, against: document)
+            applyGenerated(result)
+            aiHistory.append(trimmed)
+            aiState = .idle
+            aiPanelVisible = false
+        } catch {
+            aiState = .failed(String(describing: error))
+        }
+    }
+
+    /// Apply a validated generation as a single `.ai` transaction (one ⌘Z), tagged with a generation
+    /// id so the undo record carries provenance.
+    private func applyGenerated(_ result: GenerationResult) {
+        guard !result.commands.isEmpty else { return }
+        let command: AnyCommand = result.commands.count == 1
+            ? result.commands[0]
+            : .batch(commands: result.commands, label: result.label)
+        _ = try? store.perform(command, label: result.label,
+                               source: .ai(generationID: UUID().uuidString))
     }
 
     // MARK: Files
