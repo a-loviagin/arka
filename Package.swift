@@ -14,6 +14,11 @@ let package = Package(
         .library(name: "MotionRender", targets: ["MotionRender"]),
         .library(name: "MotionAI", targets: ["MotionAI"]),
         .executable(name: "Arka", targets: ["Arka"]),
+        .executable(name: "ArkaServer", targets: ["ArkaServer"]),
+    ],
+    dependencies: [
+        // The backend service runs the same MotionKernel/MotionAI as the app (ai-pipeline §2).
+        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
     ],
     targets: [
         // The portable, Apple-framework-free core. Builds & tests on Linux (platform-strategy §2).
@@ -52,6 +57,15 @@ let package = Package(
         .executableTarget(
             name: "Arka",
             dependencies: ["MotionKernel", "MotionRender", "MotionAI"]
+        ),
+        // The backend service: a thin Hummingbird HTTP layer over GenerationService. Runs the same
+        // kernel + AI pipeline as the app, so the .motion contract is identical on both sides.
+        .executableTarget(
+            name: "ArkaServer",
+            dependencies: [
+                "MotionKernel", "MotionAI",
+                .product(name: "Hummingbird", package: "hummingbird"),
+            ]
         ),
     ]
 )
