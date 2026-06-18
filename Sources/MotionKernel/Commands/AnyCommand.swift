@@ -19,6 +19,10 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case addAsset(asset: Asset)
     case removeAsset(assetId: EntityID)
     case setCompositionSetting(compId: EntityID, setting: CompositionSetting)
+    /// AI/preset macros (ai-pipeline.md §4): expand deterministically into keyframe commands on
+    /// apply, via the pattern library.
+    case applyPattern(layerId: EntityID, pattern: MotionPattern, params: PatternParams)
+    case stagger(layerIds: [EntityID], pattern: MotionPattern, params: PatternParams, gap: TimeInterval)
     case batch(commands: [AnyCommand], label: String)
 
     public struct KeyframeMove: Codable, Sendable, Equatable {
@@ -94,6 +98,10 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
                 throw CommandError.valueOutOfRange("fps must be > 0")
             }
             _ = comp
+        case .applyPattern(let layerId, _, _):
+            _ = try locateLayer(layerId, in: doc)
+        case .stagger(let layerIds, _, _, _):
+            for id in layerIds { _ = try locateLayer(id, in: doc) }
         case .batch(let commands, _):
             // Validate each against the *evolving* state: apply to a scratch copy as we go.
             var scratch = doc
@@ -158,6 +166,18 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
             case .backgroundColor(let c): doc.compositions[ci].backgroundColor = c
             case .name(let n): doc.compositions[ci].name = n
             }
+        case .applyPattern(let layerId, let pattern, let params):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            let expanded = PatternLibrary.expand(pattern, on: doc.compositions[ci].layers[li],
+                                                 in: doc.compositions[ci], params: params)
+            for cmd in expanded { try cmd.apply(to: &doc) }
+        case .stagger(let layerIds, let pattern, let params, let gap):
+            guard let first = layerIds.first else { return }
+            let (ci, _) = try locateLayer(first, in: doc)
+            let layers = layerIds.compactMap { id in doc.compositions[ci].layers.first { $0.id == id } }
+            let expanded = PatternLibrary.stagger(pattern, on: layers, in: doc.compositions[ci],
+                                                  params: params, gap: gap)
+            for cmd in expanded { try cmd.apply(to: &doc) }
         case .batch(let commands, _):
             for cmd in commands { try cmd.apply(to: &doc) }
         }

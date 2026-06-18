@@ -33,6 +33,7 @@ extension AnyCommand {
         case path, value, keyframe, t, easeIn, easeOut, moves
         case asset, assetId, setting, commands, label
         case visible, locked
+        case pattern, params, layerIds, gap
     }
 
     public init(from decoder: any Decoder) throws {
@@ -83,6 +84,15 @@ extension AnyCommand {
         case "SetCompositionSetting":
             self = .setCompositionSetting(compId: try c.decode(EntityID.self, forKey: .compId),
                                           setting: try c.decode(CompositionSetting.self, forKey: .setting))
+        case "ApplyPattern":
+            self = .applyPattern(layerId: try c.decode(EntityID.self, forKey: .layerId),
+                                 pattern: try c.decode(MotionPattern.self, forKey: .pattern),
+                                 params: try c.decode(PatternParams.self, forKey: .params))
+        case "Stagger":
+            self = .stagger(layerIds: try c.decode([EntityID].self, forKey: .layerIds),
+                            pattern: try c.decode(MotionPattern.self, forKey: .pattern),
+                            params: try c.decode(PatternParams.self, forKey: .params),
+                            gap: try c.decodeIfPresent(TimeInterval.self, forKey: .gap) ?? 0.08)
         case "Batch":
             self = .batch(commands: try c.decode([AnyCommand].self, forKey: .commands),
                           label: try c.decodeIfPresent(String.self, forKey: .label) ?? "Batch")
@@ -153,6 +163,17 @@ extension AnyCommand {
             try c.encode("SetCompositionSetting", forKey: .type)
             try c.encode(compId, forKey: .compId)
             try c.encode(setting, forKey: .setting)
+        case .applyPattern(let layerId, let pattern, let params):
+            try c.encode("ApplyPattern", forKey: .type)
+            try c.encode(layerId, forKey: .layerId)
+            try c.encode(pattern, forKey: .pattern)
+            try c.encode(params, forKey: .params)
+        case .stagger(let layerIds, let pattern, let params, let gap):
+            try c.encode("Stagger", forKey: .type)
+            try c.encode(layerIds, forKey: .layerIds)
+            try c.encode(pattern, forKey: .pattern)
+            try c.encode(params, forKey: .params)
+            try c.encode(gap, forKey: .gap)
         case .batch(let commands, let label):
             try c.encode("Batch", forKey: .type)
             try c.encode(commands, forKey: .commands)

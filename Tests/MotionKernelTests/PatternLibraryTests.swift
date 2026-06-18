@@ -75,6 +75,28 @@ final class PatternLibraryTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(firstT("l2")), 0.4, accuracy: 1e-9)
     }
 
+    func testApplyPatternMacroExpandsOnApply() throws {
+        let (store, id) = layerDoc(opacity: 1)
+        try store.perform(.applyPattern(layerId: id, pattern: .fadeIn,
+                                        params: PatternParams(at: 0, duration: 0.5, character: .gentle)),
+                          label: "Fade In")
+        XCTAssertTrue(store.document.composition("comp")!.layer(id)!.transform.opacity.isAnimated,
+                      "macro expanded into keyframes")
+        store.undo()
+        XCTAssertFalse(store.document.composition("comp")!.layer(id)!.transform.opacity.isAnimated,
+                       "one undo reverts the whole macro")
+    }
+
+    func testMacroCommandsRoundTripJSON() throws {
+        let cmds: [AnyCommand] = [
+            .applyPattern(layerId: "l", pattern: .popIn, params: PatternParams(at: 0.2, duration: 0.5, character: .bouncy)),
+            .stagger(layerIds: ["a", "b"], pattern: .slideInUp,
+                     params: PatternParams(at: 0, duration: 0.4, character: .snappy, distance: 120), gap: 0.1),
+        ]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     func testEveryPatternExpandsNonEmpty() {
         let (store, id) = layerDoc()
         let comp = store.document.composition("comp")!

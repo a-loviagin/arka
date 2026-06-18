@@ -5,7 +5,7 @@ import Foundation
 /// commands. Expansion is pure Swift, so it's testable with golden frames and improvable without
 /// touching any model — and the same library powers a non-AI presets panel and (later) the AI
 /// macro vocabulary (`ApplyPattern` / `Stagger`).
-public enum MotionPattern: String, CaseIterable, Sendable {
+public enum MotionPattern: String, CaseIterable, Sendable, Codable {
     // Entrances (off-state → the layer's current rest transform).
     case fadeIn, popIn, scaleReveal
     case slideInUp, slideInDown, slideInLeft, slideInRight
@@ -38,7 +38,7 @@ public enum MotionPattern: String, CaseIterable, Sendable {
 }
 
 /// Curated easing/spring per motion "character" (ai-pipeline.md §4).
-public enum MotionCharacter: String, CaseIterable, Sendable {
+public enum MotionCharacter: String, CaseIterable, Sendable, Codable {
     case gentle, snappy, bouncy, dramatic
 
     public var displayName: String { rawValue.capitalized }
@@ -71,7 +71,7 @@ public enum MotionCharacter: String, CaseIterable, Sendable {
     }
 }
 
-public struct PatternParams: Sendable {
+public struct PatternParams: Sendable, Codable, Equatable {
     public var at: TimeInterval
     public var duration: TimeInterval
     public var character: MotionCharacter
