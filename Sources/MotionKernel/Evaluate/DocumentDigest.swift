@@ -23,6 +23,8 @@ public struct DocumentDigest: Codable, Sendable, Equatable {
         public var keyframeCount: Int
         public var parentId: String?
         public var selected: Bool
+        /// Effects already on the layer, as "<effectId>:<type>" — lets the model remove or tweak them.
+        public var effects: [String]
     }
 
     public var comp: CompSettings
@@ -49,7 +51,8 @@ public struct DocumentDigest: Codable, Sendable, Equatable {
             }
             return LayerSummary(id: layer.id.rawValue, type: layer.content.typeName, name: layer.name,
                                 text: text, frame: frame, animated: animated, keyframeCount: keyframeCount,
-                                parentId: layer.parentId?.rawValue, selected: selection.contains(layer.id))
+                                parentId: layer.parentId?.rawValue, selected: selection.contains(layer.id),
+                                effects: layer.effects.map { "\($0.id.rawValue):\($0.type)" })
         }
 
         return DocumentDigest(

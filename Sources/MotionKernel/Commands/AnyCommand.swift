@@ -18,6 +18,8 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case setKeyframeInterp(path: String, t: TimeInterval, interp: Interpolation)
     case addAsset(asset: Asset)
     case removeAsset(assetId: EntityID)
+    case addEffect(layerId: EntityID, effect: Effect)
+    case removeEffect(layerId: EntityID, effectId: EntityID)
     case setCompositionSetting(compId: EntityID, setting: CompositionSetting)
     /// AI/preset macros (ai-pipeline.md §4): expand deterministically into keyframe commands on
     /// apply, via the pattern library.
@@ -89,6 +91,16 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
             if doc.assets.contains(where: { $0.id == asset.id }) { throw CommandError.duplicateID(asset.id) }
         case .removeAsset(let id):
             guard doc.asset(id) != nil else { throw CommandError.assetNotFound(id) }
+        case .addEffect(let layerId, let effect):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            if doc.compositions[ci].layers[li].effects.contains(where: { $0.id == effect.id }) {
+                throw CommandError.duplicateID(effect.id)
+            }
+        case .removeEffect(let layerId, let effectId):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            guard doc.compositions[ci].layers[li].effects.contains(where: { $0.id == effectId }) else {
+                throw CommandError.effectNotFound(effectId)
+            }
         case .setCompositionSetting(let compId, let setting):
             guard let comp = doc.composition(compId) else { throw CommandError.compositionNotFound(compId) }
             if case .duration(let d) = setting, d <= 0 {
@@ -157,6 +169,12 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
             doc.assets.append(asset)
         case .removeAsset(let id):
             doc.assets.removeAll { $0.id == id }
+        case .addEffect(let layerId, let effect):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            doc.compositions[ci].layers[li].effects.append(effect)
+        case .removeEffect(let layerId, let effectId):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            doc.compositions[ci].layers[li].effects.removeAll { $0.id == effectId }
         case .setCompositionSetting(let compId, let setting):
             guard let ci = doc.compositionIndex(compId) else { throw CommandError.compositionNotFound(compId) }
             switch setting {

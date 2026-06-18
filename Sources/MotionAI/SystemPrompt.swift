@@ -27,18 +27,52 @@ public enum SystemPrompt {
         PATTERNS: \(patterns).
         CHARACTERS: \(characters).
 
-        COMMAND FORMAT (each command is one object in the `commands` array, tagged by `type`)
-        - ApplyPattern — one layer:
+        COMMAND FORMAT (each command is one object in the `commands` array, tagged by `type`).
+        A `<value>` is a number (scalar), [x,y] (vec2), or "#RRGGBB" (color).
+
+        Animation (prefer these):
+        - ApplyPattern — animate one layer:
           {"type":"ApplyPattern","layerId":"<id>","pattern":"<pattern>",
            "params":{"at":<sec>,"duration":<sec>,"character":"<character>","distance":<px?>}}
         - Stagger — many layers, offset successively by `gap` seconds:
-          {"type":"Stagger","layerIds":["<id>",...],"pattern":"<pattern>",
-           "params":{...},"gap":<sec>}
-        - SetKeyframe — one precise keyframe on a property path "<layerId>/transform/<prop>":
+          {"type":"Stagger","layerIds":["<id>",...],"pattern":"<pattern>","params":{...},"gap":<sec>}
+        - SetKeyframe — one keyframe on "<layerId>/transform/<prop>" (prop: position, scale, rotation,
+          opacity, anchor):
           {"type":"SetKeyframe","path":"logo/transform/opacity","keyframe":{"t":<sec>,"v":<value>}}
-          where `v` is a number (scalar), [x,y] (vec2), or "#RRGGBB" (color); prop is one of
-          position, scale, rotation, opacity, anchor.
-        `params.distance` and `params.character` are optional (default snappy, sensible distance).
+        - SetProperty — set a static (un-animated) value on a path:
+          {"type":"SetProperty","path":"logo/transform/scale","value":[1.2,1.2]}
+
+        Objects:
+        - AddLayer — add a new layer to a composition. `layer` is a full layer object; minimum:
+          {"type":"AddLayer","compId":"<comp>","layer":{
+             "id":"<new-client-prefixed-id>","name":"...","sortKey":"<fractional key, e.g. \\"m\\">",
+             "content":{"type":"shape","geometry":"rect","size":{"static":[W,H]},
+                        "fillColor":{"static":"#RRGGBB"}},
+             "transform":{"position":{"static":[x,y]},"opacity":{"static":1}}}}
+          content can also be {"type":"null"} (a transform-only parent) or text — text requires all of:
+          {"type":"text","string":"Hi","fontFamily":"Helvetica","fontSize":{"static":48},
+           "fillColor":{"static":"#000000"},"alignment":"left"}.
+        - RemoveLayer: {"type":"RemoveLayer","layerId":"<id>"}
+        - SetLayerParent / ReorderLayer / SetLayerVisible: by layerId.
+
+        Effects (the digest lists each layer's effects as "<effectId>:<type>"):
+        - AddEffect — add an effect to an existing layer. Each param is {"kind":"scalar|vec2|color",
+          "value":{"static":<v>}}:
+          {"type":"AddEffect","layerId":"<id>","effect":{"id":"<new-id>","type":"blur",
+            "params":{"radius":{"kind":"scalar","value":{"static":12}}}}}
+          drop-shadow type "shadow" params: offset (vec2), radius (scalar), color (color),
+          opacity (scalar).
+          Animate or tweak an effect param via a path: "<layerId>/effects/<effectId>/params/<name>".
+        - RemoveEffect: {"type":"RemoveEffect","layerId":"<id>","effectId":"<id>"}
+
+        Timeline / composition:
+        - SetCompositionSetting:
+          {"type":"SetCompositionSetting","compId":"<comp>","setting":{"key":"duration","value":3}}
+          key is one of duration, fps, size ([w,h]), backgroundColor ("#RRGGBB"), name.
+
+        Wrap several commands as one undoable step only if needed; usually just list them. New IDs you
+        invent must be unique and not collide with IDs in the digest. `params.distance`/`character`
+        are optional (default snappy).
 
         Respond with a brief plan, an undo label, and the command list — by calling the tool.
         """

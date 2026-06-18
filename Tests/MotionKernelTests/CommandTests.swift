@@ -142,4 +142,78 @@ final class CommandTests: XCTestCase {
         store.undo()
         XCTAssertEqual(store.document, original)
     }
+
+    // MARK: Effects
+
+    private func blur(_ id: EntityID = "fx_blur", radius: Double = 8) -> Effect {
+        Effect(id: id, type: "blur", params: ["radius": .scalar(.static(radius))])
+    }
+
+    func testAddEffectAppendsToLayer() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.addEffect(layerId: "layer_logo", effect: blur()), label: "Add Blur")
+        let fx = store.document.composition("comp_main")!.layer("layer_logo")!.effects
+        XCTAssertEqual(fx.count, 1)
+        XCTAssertEqual(fx.first?.type, "blur")
+    }
+
+    func testAddEffectRejectsDuplicateID() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.addEffect(layerId: "layer_logo", effect: blur()), label: "Add Blur")
+        XCTAssertThrowsError(
+            try store.perform(.addEffect(layerId: "layer_logo", effect: blur()), label: "Add Blur 2")
+        ) { XCTAssertEqual($0 as? CommandError, .duplicateID("fx_blur")) }
+    }
+
+    func testRemoveEffect() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.addEffect(layerId: "layer_logo", effect: blur()), label: "Add Blur")
+        try store.perform(.removeEffect(layerId: "layer_logo", effectId: "fx_blur"), label: "Remove Blur")
+        XCTAssertTrue(store.document.composition("comp_main")!.layer("layer_logo")!.effects.isEmpty)
+    }
+
+    func testRemoveMissingEffectThrows() {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        XCTAssertThrowsError(
+            try store.perform(.removeEffect(layerId: "layer_logo", effectId: "ghost"), label: "Remove")
+        ) { XCTAssertEqual($0 as? CommandError, .effectNotFound("ghost")) }
+    }
+
+    /// The shapes documented in MotionAI's SystemPrompt must decode + apply. If the schema drifts
+    /// from the prompt, this fails — keeping the model's instructions truthful.
+    func testDocumentedCommandShapesDecodeAndApply() throws {
+        let json = """
+        [
+          {"type":"AddLayer","compId":"comp_main","layer":{
+             "id":"ai_box","name":"Box","sortKey":"z0",
+             "content":{"type":"shape","geometry":"rect","size":{"static":[80,80]},
+                        "fillColor":{"static":"#3366FF"}},
+             "transform":{"position":{"static":[100,100]},"opacity":{"static":1}}}},
+          {"type":"AddEffect","layerId":"ai_box","effect":{"id":"fx1","type":"shadow",
+             "params":{"offset":{"kind":"vec2","value":{"static":[0,6]}},
+                       "radius":{"kind":"scalar","value":{"static":8}},
+                       "color":{"kind":"color","value":{"static":"#000000"}},
+                       "opacity":{"kind":"scalar","value":{"static":0.5}}}}},
+          {"type":"SetProperty","path":"ai_box/transform/scale","value":[1.2,1.2]},
+          {"type":"SetCompositionSetting","compId":"comp_main","setting":{"key":"duration","value":3}}
+        ]
+        """
+        let cmds = try JSONDecoder().decode([AnyCommand].self, from: Data(json.utf8))
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.batch(commands: cmds, label: "AI edit"), label: "AI edit")
+        let comp = store.document.composition("comp_main")!
+        let box = comp.layer("ai_box")!
+        XCTAssertEqual(box.effects.first?.type, "shadow")
+        XCTAssertEqual(box.transform.scale.staticValue, Vec2(1.2, 1.2))
+        XCTAssertEqual(comp.duration, 3, accuracy: 1e-9)
+    }
+
+    func testEffectCommandsRoundTripJSON() throws {
+        let cmds: [AnyCommand] = [
+            .addEffect(layerId: "layer_logo", effect: blur()),
+            .removeEffect(layerId: "layer_logo", effectId: "fx_blur"),
+        ]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
 }

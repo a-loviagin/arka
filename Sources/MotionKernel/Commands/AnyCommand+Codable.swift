@@ -34,6 +34,7 @@ extension AnyCommand {
         case asset, assetId, setting, commands, label
         case visible, locked
         case pattern, params, layerIds, gap
+        case effect, effectId
     }
 
     public init(from decoder: any Decoder) throws {
@@ -81,6 +82,12 @@ extension AnyCommand {
             self = .addAsset(asset: try c.decode(Asset.self, forKey: .asset))
         case "RemoveAsset":
             self = .removeAsset(assetId: try c.decode(EntityID.self, forKey: .assetId))
+        case "AddEffect":
+            self = .addEffect(layerId: try c.decode(EntityID.self, forKey: .layerId),
+                              effect: try c.decode(Effect.self, forKey: .effect))
+        case "RemoveEffect":
+            self = .removeEffect(layerId: try c.decode(EntityID.self, forKey: .layerId),
+                                 effectId: try c.decode(EntityID.self, forKey: .effectId))
         case "SetCompositionSetting":
             self = .setCompositionSetting(compId: try c.decode(EntityID.self, forKey: .compId),
                                           setting: try c.decode(CompositionSetting.self, forKey: .setting))
@@ -159,6 +166,14 @@ extension AnyCommand {
         case .removeAsset(let id):
             try c.encode("RemoveAsset", forKey: .type)
             try c.encode(id, forKey: .assetId)
+        case .addEffect(let layerId, let effect):
+            try c.encode("AddEffect", forKey: .type)
+            try c.encode(layerId, forKey: .layerId)
+            try c.encode(effect, forKey: .effect)
+        case .removeEffect(let layerId, let effectId):
+            try c.encode("RemoveEffect", forKey: .type)
+            try c.encode(layerId, forKey: .layerId)
+            try c.encode(effectId, forKey: .effectId)
         case .setCompositionSetting(let compId, let setting):
             try c.encode("SetCompositionSetting", forKey: .type)
             try c.encode(compId, forKey: .compId)
