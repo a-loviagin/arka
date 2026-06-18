@@ -10,6 +10,16 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 19 — vector paths + video (done).** The object set now covers the last two render gaps.
+**Vector-path shapes**: a kernel `PathData` (subpaths of cubic-bezier vertices, optional tangent
+handles) on `ShapeContent`; the renderer flattens curves and ear-clips each subpath into a fill
+triangle list through a new path pipeline (fill-only for v1; stroke is a follow-up), so custom
+outlines blur/shadow like any layer and the AI can author them. **Video**: a frame-accurate
+`VideoFrameProvider` (AVFoundation `AVAssetImageGenerator`, zero tolerance → deterministic, honoring
+trim/speed) decodes a frame at the comp time and renders it through the image quad path; wired into
+the live editor canvas. Verified by tessellation unit tests + a Metal triangle-fill test, and an
+export→decode→render video round-trip. 118 tests.
+
 **Phase 18 — AI pipeline + backend service (done).** The whole prompt-to-motion scope
 (ai-pipeline.md §1–7). A new Foundation-only, Linux-clean **`MotionAI`** library: request/response
 DTOs, a **validate/repair `GenerationPipeline`** (scratch-applies each command against the document,
