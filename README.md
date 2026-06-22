@@ -26,7 +26,16 @@ editable vocabulary, and an eval harness gates every prompt/example change. Beca
   exemplars are data the model reads, and the command-list output keeps generated projects fully
   editable. New examples are added by authoring an exemplar (or mining accepted generations); the
   keyword retriever can be swapped for embeddings behind the same interface.
-- Next: asset analysis + canvas-snapshot grounding (vision). 192 tests.
+- **Slice 3 (done)** — the **reference-clip taste engine**: raw mov/mp4/gif become taste by being
+  analyzed into a `VideoMotionAnalysis` (structured in *our* vocabulary — elements → pattern +
+  character + timing + stagger + palette), never used as pixels for generation. `TasteSynthesizer`
+  turns an analysis into editable commands / a reusable `Exemplar` (so an ingested clip is retrieved
+  like any other example), and `TasteProfile` distills a corpus into house-style doctrine (median
+  timing, dominant easing, stagger gap, palette) injected into the system prompt. The analyzer
+  (`VideoMotionAnalyzer`) is the data source: a Claude-vision pass and/or a deterministic CV motion
+  signature (frame-diff onsets + OKLab palette) — both feed the same offline-tested synthesizer.
+- Next: wire the live vision analyzer + CV signature + an ingestion UI; asset analysis + canvas-
+  snapshot grounding. 196 tests.
 
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence

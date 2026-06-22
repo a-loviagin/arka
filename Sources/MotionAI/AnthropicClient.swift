@@ -21,6 +21,8 @@ public struct AnthropicClient: MotionGenerator {
         /// Few-shot exemplar library + how many to retrieve per request (ai-pipeline.md §6.4).
         public var exemplars: ExemplarLibrary
         public var exemplarCount: Int
+        /// Distilled house style from the reference-clip library (§3), injected as prompt doctrine.
+        public var taste: TasteProfile?
 
         public init(apiKey: String,
                     model: String = "claude-sonnet-4-6",
@@ -28,7 +30,8 @@ public struct AnthropicClient: MotionGenerator {
                     endpoint: URL = URL(string: "https://api.anthropic.com/v1/messages")!,
                     anthropicVersion: String = "2023-06-01",
                     exemplars: ExemplarLibrary = .builtin,
-                    exemplarCount: Int = 4) {
+                    exemplarCount: Int = 4,
+                    taste: TasteProfile? = nil) {
             self.apiKey = apiKey
             self.model = model
             self.maxTokens = maxTokens
@@ -36,6 +39,7 @@ public struct AnthropicClient: MotionGenerator {
             self.anthropicVersion = anthropicVersion
             self.exemplars = exemplars
             self.exemplarCount = exemplarCount
+            self.taste = taste
         }
     }
 
@@ -77,7 +81,7 @@ public struct AnthropicClient: MotionGenerator {
         return [
             "model": config.model,
             "max_tokens": config.maxTokens,
-            "system": SystemPrompt.text(exemplars: exemplars),
+            "system": SystemPrompt.text(exemplars: exemplars, taste: config.taste),
             "tool_choice": ["type": "tool", "name": Self.toolName],
             "tools": [Self.toolDefinition()],
             "messages": [

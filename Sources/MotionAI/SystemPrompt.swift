@@ -83,18 +83,22 @@ public enum SystemPrompt {
         """
     }
 
-    /// The system prompt with a few-shot exemplar section appended (ai-pipeline.md §6.4). Exemplars
-    /// are retrieved per-request by relevance to the prompt; their layer ids are illustrative, so the
-    /// model maps them onto the digest's ids. Empty `exemplars` ⇒ the base prompt unchanged.
-    public static func text(exemplars: [Exemplar]) -> String {
-        guard !exemplars.isEmpty else { return text() }
-        var section = "\n\nFEW-SHOT EXEMPLARS — match this style and structure; the layer ids are "
-            + "illustrative, map them to ids in the digest:\n"
-        for ex in exemplars {
-            let cmds = (try? jsonString(ex.commands)) ?? "[]"
-            section += "\n• PROMPT: \(ex.intent)\n  COMMANDS: \(cmds)\n"
+    /// The system prompt with optional retrieved few-shot exemplars (ai-pipeline.md §6.4) and an
+    /// aggregate taste profile (§3, distilled from the reference-clip library) appended. Exemplar
+    /// layer ids are illustrative, so the model maps them onto the digest's ids.
+    public static func text(exemplars: [Exemplar], taste: TasteProfile? = nil) -> String {
+        var out = text()
+        if let taste { out += "\n\n" + taste.doctrine() }
+        if !exemplars.isEmpty {
+            var section = "\n\nFEW-SHOT EXEMPLARS — match this style and structure; the layer ids are "
+                + "illustrative, map them to ids in the digest:\n"
+            for ex in exemplars {
+                let cmds = (try? jsonString(ex.commands)) ?? "[]"
+                section += "\n• PROMPT: \(ex.intent)\n  COMMANDS: \(cmds)\n"
+            }
+            out += section
         }
-        return text() + section
+        return out
     }
 
     /// A compact, model-facing description of one generation request.
