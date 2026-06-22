@@ -97,6 +97,25 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(m.mainComp!.layers.count, undosBefore)
     }
 
+    func testAlignFlipReorder() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(500, 300))) // 240×160, anchor 0.5
+        m.selection = [id]
+
+        m.align(.left)   // box.min.x → 0 ⇒ position.x = halfWidth = 120
+        XCTAssertEqual(m.layer(id)!.transform.position.resolve(at: 0).x, 120, accuracy: 1.0)
+        m.align(.top)    // box.min.y → 0 ⇒ position.y = halfHeight = 80
+        XCTAssertEqual(m.layer(id)!.transform.position.resolve(at: 0).y, 80, accuracy: 1.0)
+
+        m.flip(horizontal: true)
+        XCTAssertLessThan(m.layer(id)!.transform.scale.resolve(at: 0).x, 0)
+
+        let other = try XCTUnwrap(m.createLayer(.ellipse, at: Vec2(0, 0))) // lands on top
+        m.selection = [id]
+        m.reorder(toFront: true)
+        XCTAssertGreaterThan(m.layer(id)!.sortKey, m.layer(other)!.sortKey, "brought to front")
+    }
+
     func testGenericSettersWriteAndAutoKeyframe() throws {
         let m = freshModel()
         let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))

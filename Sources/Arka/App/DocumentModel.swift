@@ -142,6 +142,68 @@ final class DocumentModel {
         try? store.perform(command, in: txn)
     }
 
+    // MARK: Arrange — align / flip / z-order (editor-ui.md §4)
+
+    enum Align { case left, hCenter, right, top, vMiddle, bottom }
+
+    /// Align each selected layer to the composition edges/center, by nudging its position so its
+    /// evaluated bounding box lands on the target — one ⌘Z. (Aligns to the comp; selection-bounds
+    /// alignment is a later refinement.)
+    func align(_ a: Align) {
+        guard let comp = mainComp, !selection.isEmpty else { return }
+        let t = playback.currentTime
+        let evById = Dictionary(uniqueKeysWithValues:
+            SceneEvaluator(document: document, textMeasurer: textEngine)
+                .evaluate(compId: comp.id, at: t).map { ($0.layerId, $0) })
+        let txn = store.begin("Align")
+        for id in selection {
+            guard let ev = evById[id], ev.size.x > 0, ev.size.y > 0,
+                  let pos = layer(id)?.transform.position.resolve(at: t) else { continue }
+            let b = ev.boundingBox
+            var dx = 0.0, dy = 0.0
+            switch a {
+            case .left: dx = -b.min.x
+            case .hCenter: dx = comp.size.x / 2 - (b.min.x + b.max.x) / 2
+            case .right: dx = comp.size.x - b.max.x
+            case .top: dy = -b.min.y
+            case .vMiddle: dy = comp.size.y / 2 - (b.min.y + b.max.y) / 2
+            case .bottom: dy = comp.size.y - b.max.y
+            }
+            setPosition(id, to: Vec2(pos.x + dx, pos.y + dy), within: txn)
+        }
+        store.commit(txn)
+    }
+
+    /// Flip the selection on one axis via negative scale — one ⌘Z.
+    func flip(horizontal: Bool) {
+        guard !selection.isEmpty else { return }
+        let t = playback.currentTime
+        let txn = store.begin(horizontal ? "Flip Horizontal" : "Flip Vertical")
+        for id in selection {
+            guard let s = layer(id)?.transform.scale.resolve(at: t) else { continue }
+            setScale(id, to: horizontal ? Vec2(-s.x, s.y) : Vec2(s.x, -s.y), within: txn)
+        }
+        store.commit(txn)
+    }
+
+    /// Move the selection above everything (front) or below everything (back), preserving the order
+    /// among the selected layers — one ⌘Z.
+    func reorder(toFront: Bool) {
+        guard let comp = mainComp else { return }
+        let others = comp.layers.filter { !selection.contains($0.id) }.map(\.sortKey)
+        let sel = comp.layers.filter { selection.contains($0.id) }.sorted { $0.sortKey < $1.sortKey }
+        guard !sel.isEmpty else { return }
+        let txn = store.begin(toFront ? "Bring to Front" : "Send to Back")
+        if toFront {
+            var lower = others.max()
+            for l in sel { let k = SortKey.between(lower, nil); try? store.perform(.reorderLayer(layerId: l.id, sortKey: k), in: txn); lower = k }
+        } else {
+            var upper = others.min()
+            for l in sel.reversed() { let k = SortKey.between(nil, upper); try? store.perform(.reorderLayer(layerId: l.id, sortKey: k), in: txn); upper = k }
+        }
+        store.commit(txn)
+    }
+
     // MARK: Generic property writes (inspector bindings, editor-ui.md §4)
 
     /// Auto-keyframing write for any property path: `SetProperty` when the track is static, or a

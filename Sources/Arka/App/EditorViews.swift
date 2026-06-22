@@ -423,6 +423,8 @@ struct InspectorView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                     Divider()
 
+                    arrangeSection()
+                    Divider()
                     transformSection(layer)
 
                     switch layer.content {
@@ -452,6 +454,33 @@ struct InspectorView: View {
     }
 
     // MARK: Sections
+
+    @ViewBuilder private func arrangeSection() -> some View {
+        sectionLabel("Arrange")
+        HStack(spacing: 2) {
+            iconButton("align.horizontal.left", "Align left") { model.align(.left) }
+            iconButton("align.horizontal.center", "Align center") { model.align(.hCenter) }
+            iconButton("align.horizontal.right", "Align right") { model.align(.right) }
+            Divider().frame(height: 16)
+            iconButton("align.vertical.top", "Align top") { model.align(.top) }
+            iconButton("align.vertical.center", "Align middle") { model.align(.vMiddle) }
+            iconButton("align.vertical.bottom", "Align bottom") { model.align(.bottom) }
+        }
+        HStack(spacing: 2) {
+            iconButton("arrow.left.and.right.righttriangle.left.righttriangle.right", "Flip horizontal") { model.flip(horizontal: true) }
+            iconButton("arrow.up.and.down.righttriangle.up.righttriangle.down", "Flip vertical") { model.flip(horizontal: false) }
+            Divider().frame(height: 16)
+            iconButton("square.3.layers.3d.top.filled", "Bring to front") { model.reorder(toFront: true) }
+            iconButton("square.3.layers.3d.bottom.filled", "Send to back") { model.reorder(toFront: false) }
+        }
+    }
+
+    private func iconButton(_ system: String, _ help: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: system).frame(width: 24, height: 18).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.secondary).help(help)
+    }
 
     @ViewBuilder private func transformSection(_ layer: Layer) -> some View {
         let id = layer.id
