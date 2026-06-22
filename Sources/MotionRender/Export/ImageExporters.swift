@@ -43,8 +43,10 @@ private func frameSource(_ document: MotionDocument, _ compId: EntityID, _ rende
 }
 
 /// Animated GIF export (export-and-format.md §1). fps is capped at 50 (GIF delays are
-/// centisecond-quantized; 50fps = 2cs exactly). Palette quantization is ImageIO's adaptive
-/// per-image palette for v1 — per-scene libimagequant palettes are a later quality upgrade.
+/// centisecond-quantized; 50fps = 2cs exactly). When `craft` is on, a single OKLab median-cut
+/// palette is built across all frames and applied with ordered dithering (`GIFQuantizer`) — stable
+/// (no per-frame flicker) and perceptually tuned; otherwise frames go straight to ImageIO's adaptive
+/// palette.
 public enum GIFExporter {
     public enum GIFError: Error { case setup, noFrame }
 
@@ -52,7 +54,7 @@ public enum GIFExporter {
                               textures: (any TextureProvider)? = nil,
                               video: VideoFrameProvider? = nil, assetBaseURL: URL? = nil,
                               width: Int, height: Int, fps: Double,
-                              startTime: TimeInterval, endTime: TimeInterval,
+                              startTime: TimeInterval, endTime: TimeInterval, craft: Bool = true,
                               to url: URL, progress: ((Double) -> Void)? = nil) throws {
         guard let src = frameSource(document, compId, renderer, textures, width: width, height: height,
                                     transparent: false, video: video, assetBaseURL: assetBaseURL)
@@ -62,6 +64,22 @@ public enum GIFExporter {
         let frameCount = max(Int((duration * cappedFps).rounded()), 1)
         let delay = max((100.0 / cappedFps).rounded() / 100.0, 0.02) // seconds, centisecond-quantized
 
+        // Render every frame first (a shared palette needs to see them all).
+        var frames: [PixelImage] = []
+        frames.reserveCapacity(frameCount)
+        for i in 0..<frameCount {
+            guard let img = src.image(at: startTime + Double(i) / cappedFps) else { throw GIFError.noFrame }
+            frames.append(img)
+        }
+
+        var palette: GIFQuantizer.Palette?
+        var lut: [UInt8] = []
+        if craft {
+            let p = GIFQuantizer.palette(from: frames)
+            palette = p
+            lut = GIFQuantizer.lut(for: p)
+        }
+
         try? FileManager.default.removeItem(at: url)
         guard let dest = CGImageDestinationCreateWithURL(
             url as CFURL, UTType.gif.identifier as CFString, frameCount,
@@ -70,9 +88,9 @@ public enum GIFExporter {
 
         let frameProps = [kCGImagePropertyGIFDictionary as String:
                             [kCGImagePropertyGIFDelayTime as String: delay]] as CFDictionary
-        for i in 0..<frameCount {
-            let t = startTime + Double(i) / cappedFps
-            guard let cg = src.image(at: t)?.cgImage() else { throw GIFError.noFrame }
+        for (i, frame) in frames.enumerated() {
+            let toEncode = palette.map { GIFQuantizer.mapped(frame, palette: $0, lut: lut) } ?? frame
+            guard let cg = toEncode.cgImage() else { throw GIFError.noFrame }
             CGImageDestinationAddImage(dest, cg, frameProps)
             progress?(Double(i + 1) / Double(frameCount))
         }
