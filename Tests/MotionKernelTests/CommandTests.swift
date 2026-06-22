@@ -208,6 +208,17 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(comp.duration, 3, accuracy: 1e-9)
     }
 
+    func testStructuralCommandsRoundTripJSON() throws {
+        let cmds: [AnyCommand] = [
+            .setLayerName(layerId: "layer_logo", name: "Hero"),
+            .setContent(layerId: "layer_logo", content: .text(TextContent(
+                string: "Hi", fontFamily: "Georgia", fontSize: .static(40),
+                fillColor: .static(.white), alignment: .center))),
+        ]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     func testEffectCommandsRoundTripJSON() throws {
         let cmds: [AnyCommand] = [
             .addEffect(layerId: "layer_logo", effect: blur()),

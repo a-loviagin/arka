@@ -418,7 +418,7 @@ struct InspectorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 if let layer = model.selectedLayer {
-                    Text(layer.name.isEmpty ? "Layer" : layer.name).font(.headline)
+                    NameEditor(model: model, id: layer.id, name: layer.name).id(layer.id)
                     Text(layer.content.typeName.capitalized)
                         .font(.subheadline).foregroundStyle(.secondary)
                     Divider()
@@ -430,12 +430,16 @@ struct InspectorView: View {
                     switch layer.content {
                     case .shape(let s): Divider(); shapeSection(layer.id, s)
                     case .text(let tc): Divider(); textSection(layer.id, tc)
-                    case .image, .video:
+                    case .image(let ic): Divider(); imageSection(layer.id, ic)
+                    case .video:
                         Divider()
-                        Text("Image and video editing (fit, replace) is coming.")
+                        Text("Video editing (trim, replace) is coming.")
                             .font(.caption).foregroundStyle(.tertiary)
                     default: EmptyView()
                     }
+
+                    Divider()
+                    effectsSection(layer)
 
                     Divider()
                     PresetsView(model: model)
@@ -541,12 +545,71 @@ struct InspectorView: View {
 
     @ViewBuilder private func textSection(_ id: EntityID, _ tc: TextContent) -> some View {
         sectionLabel("Text")
-        Text("“\(tc.string)” · \(tc.fontFamily)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        TextContentEditor(model: model, id: id, content: tc).id(id)
         scalarRow("Size", id, "content/fontSize", tc.fontSize, sensitivity: 0.5)
         scalarRow("Tracking", id, "content/tracking", tc.tracking ?? .static(0), format: "%.1f", sensitivity: 0.2)
         colorRow("Fill", id, "content/fillColor", tc.fillColor, defaultColor: .white)
-        Text("Editing the text, font, and alignment is coming.")
-            .font(.caption2).foregroundStyle(.tertiary)
+    }
+
+    @ViewBuilder private func imageSection(_ id: EntityID, _ ic: ImageContent) -> some View {
+        sectionLabel("Image")
+        Picker("Fit", selection: Binding(get: { ic.fit }, set: { model.setImageFit(id, $0) })) {
+            Text("Fill").tag(FitMode.fill)
+            Text("Fit").tag(FitMode.fit)
+            Text("Stretch").tag(FitMode.stretch)
+            Text("None").tag(FitMode.none)
+        }.pickerStyle(.menu)
+    }
+
+    @ViewBuilder private func effectsSection(_ layer: Layer) -> some View {
+        sectionLabel("Effects")
+        ForEach(layer.effects, id: \.id) { fx in effectRow(layer.id, fx) }
+        HStack(spacing: 6) {
+            Button("+ Blur") { model.addBlur(to: layer.id) }.controlSize(.small)
+            Button("+ Shadow") { model.addShadow(to: layer.id) }.controlSize(.small)
+            Spacer()
+        }
+    }
+
+    @ViewBuilder private func effectRow(_ id: EntityID, _ fx: Effect) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(fx.type.capitalized).font(.caption.weight(.medium))
+                Spacer()
+                Button { model.removeEffect(id, fx.id) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).help("Remove effect")
+            }
+            let base = "effects/\(fx.id)/params"
+            switch fx.type {
+            case "blur":
+                if case .scalar(let r)? = fx.params["radius"] { scalarRow("Radius", id, "\(base)/radius", r, sensitivity: 0.5) }
+            case "shadow":
+                if case .scalar(let r)? = fx.params["radius"] { scalarRow("Radius", id, "\(base)/radius", r, sensitivity: 0.5) }
+                if case .vec2(let o)? = fx.params["offset"] { vec2Row("X", "Y", id, "\(base)/offset", o) }
+                if case .color(let c)? = fx.params["color"] { colorRow("Color", id, "\(base)/color", c, defaultColor: .black) }
+                if case .scalar(let op)? = fx.params["opacity"] { scalarRow("Opacity", id, "\(base)/opacity", op, format: "%.2f", sensitivity: 0.01) }
+            default: EmptyView()
+            }
+        }
+        .padding(6).background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.08)))
+    }
+
+    /// A diamond + two scrubbable fields bound to a vec2 `AnimatableValue` at `id/prop`.
+    private func vec2Row(_ tX: String, _ tY: String, _ id: EntityID, _ prop: String,
+                         _ av: AnimatableValue<Vec2>, sensitivity: Double = 1) -> some View {
+        let path = "\(id)/\(prop)"
+        let v = av.resolve(at: t)
+        return HStack(spacing: 6) {
+            diamond(path: path, isAnimated: av.isAnimated, times: keyTimes(av)) { .vec2(av.resolve(at: t)) }
+            ScrubbableField(title: tX, value: v.x, format: "%.0f", sensitivity: sensitivity,
+                onBegin: { model.store.begin(tX) },
+                onChange: { nv, txn in model.setAnimatable(path: path, value: .vec2(Vec2(nv, av.resolve(at: t).y)), isAnimated: av.isAnimated, within: txn) },
+                onEnd: { model.store.commit($0) })
+            ScrubbableField(title: tY, value: v.y, format: "%.0f", sensitivity: sensitivity,
+                onBegin: { model.store.begin(tY) },
+                onChange: { nv, txn in model.setAnimatable(path: path, value: .vec2(Vec2(av.resolve(at: t).x, nv)), isAnimated: av.isAnimated, within: txn) },
+                onEnd: { model.store.commit($0) })
+        }
     }
 
     @ViewBuilder private func opacityRow(_ layer: Layer) -> some View {
@@ -635,6 +698,49 @@ struct InspectorView: View {
                 .font(.system(size: 10)).foregroundStyle(active ? Color.accentColor : Color.secondary)
         }
         .buttonStyle(.plain).help("Toggle keyframe at playhead")
+    }
+}
+
+/// Editable layer name (commits one `SetLayerName` on Return). Local `@State` so typing has the
+/// field's own undo; `.id(layer.id)` on the call site reseeds it when the selection changes.
+private struct NameEditor: View {
+    let model: DocumentModel
+    let id: EntityID
+    @State private var name: String
+    init(model: DocumentModel, id: EntityID, name: String) {
+        self.model = model; self.id = id; _name = State(initialValue: name)
+    }
+    var body: some View {
+        TextField("Layer name", text: $name)
+            .textFieldStyle(.plain).font(.headline)
+            .onSubmit { model.renameLayer(id, to: name) }
+    }
+}
+
+/// Structural text editing — string, font family (commit on Return), and alignment (commit on
+/// change) — each via one `SetContent` (editor-ui.md §4 / undo-system.md §7).
+private struct TextContentEditor: View {
+    let model: DocumentModel
+    let id: EntityID
+    let content: TextContent
+    @State private var string: String
+    @State private var family: String
+    init(model: DocumentModel, id: EntityID, content: TextContent) {
+        self.model = model; self.id = id; self.content = content
+        _string = State(initialValue: content.string)
+        _family = State(initialValue: content.fontFamily)
+    }
+    var body: some View {
+        TextField("Text", text: $string).textFieldStyle(.roundedBorder)
+            .onSubmit { model.editText(id) { $0.string = string } }
+        TextField("Font", text: $family).textFieldStyle(.roundedBorder)
+            .onSubmit { model.editText(id) { $0.fontFamily = family } }
+        Picker("", selection: Binding(get: { content.alignment },
+                                      set: { a in model.editText(id) { $0.alignment = a } })) {
+            Image(systemName: "text.alignleft").tag(MotionKernel.TextAlignment.left)
+            Image(systemName: "text.aligncenter").tag(MotionKernel.TextAlignment.center)
+            Image(systemName: "text.alignright").tag(MotionKernel.TextAlignment.right)
+        }.pickerStyle(.segmented).labelsHidden()
     }
 }
 

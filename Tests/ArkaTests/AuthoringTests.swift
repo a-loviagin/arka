@@ -116,6 +116,22 @@ final class AuthoringTests: XCTestCase {
         XCTAssertGreaterThan(m.layer(id)!.sortKey, m.layer(other)!.sortKey, "brought to front")
     }
 
+    func testTextEditAndRename() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.createLayer(.text, at: Vec2(100, 100)))
+        m.renameLayer(id, to: "Title")
+        XCTAssertEqual(m.layer(id)?.name, "Title")
+
+        m.editText(id) { $0.string = "Hello"; $0.fontFamily = "Georgia" }
+        guard case .text(let tc) = try XCTUnwrap(m.layer(id)).content else { return XCTFail("text") }
+        XCTAssertEqual(tc.string, "Hello")
+        XCTAssertEqual(tc.fontFamily, "Georgia")
+
+        m.store.undo() // one step reverts the SetContent
+        guard case .text(let tc2) = try XCTUnwrap(m.layer(id)).content else { return XCTFail("text") }
+        XCTAssertEqual(tc2.string, "Text", "undo restores the default text")
+    }
+
     func testGenericSettersWriteAndAutoKeyframe() throws {
         let m = freshModel()
         let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))

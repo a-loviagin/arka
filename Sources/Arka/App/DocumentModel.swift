@@ -204,6 +204,47 @@ final class DocumentModel {
         store.commit(txn)
     }
 
+    // MARK: Structural content edits (SetLayerName / SetContent)
+
+    func renameLayer(_ id: EntityID, to name: String) {
+        guard layer(id)?.name != name else { return }
+        try? store.perform(.setLayerName(layerId: id, name: name), label: "Rename Layer")
+    }
+
+    /// Mutate a text layer's content payload (string/font/alignment) and commit one `SetContent`.
+    func editText(_ id: EntityID, _ mutate: (inout TextContent) -> Void) {
+        guard case .text(var tc)? = layer(id)?.content else { return }
+        mutate(&tc)
+        try? store.perform(.setContent(layerId: id, content: .text(tc)), label: "Edit Text")
+    }
+
+    func setImageFit(_ id: EntityID, _ fit: FitMode) {
+        guard case .image(var ic)? = layer(id)?.content, ic.fit != fit else { return }
+        ic.fit = fit
+        try? store.perform(.setContent(layerId: id, content: .image(ic)), label: "Fit Mode")
+    }
+
+    // MARK: Effects (properties-and-commands.md §1; inspector add/remove)
+
+    func addBlur(to layerId: EntityID) {
+        let fx = Effect(id: ids.next("fx"), type: "blur", params: ["radius": .scalar(.static(8))])
+        try? store.perform(.addEffect(layerId: layerId, effect: fx), label: "Add Blur")
+    }
+
+    func addShadow(to layerId: EntityID) {
+        let fx = Effect(id: ids.next("fx"), type: "shadow", params: [
+            "offset": .vec2(.static(Vec2(0, 6))),
+            "radius": .scalar(.static(8)),
+            "color": .color(.static(.black)),
+            "opacity": .scalar(.static(0.5)),
+        ])
+        try? store.perform(.addEffect(layerId: layerId, effect: fx), label: "Add Shadow")
+    }
+
+    func removeEffect(_ layerId: EntityID, _ effectId: EntityID) {
+        try? store.perform(.removeEffect(layerId: layerId, effectId: effectId), label: "Remove Effect")
+    }
+
     // MARK: Generic property writes (inspector bindings, editor-ui.md §4)
 
     /// Auto-keyframing write for any property path: `SetProperty` when the track is static, or a

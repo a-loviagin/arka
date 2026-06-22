@@ -20,6 +20,10 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case removeAsset(assetId: EntityID)
     case addEffect(layerId: EntityID, effect: Effect)
     case removeEffect(layerId: EntityID, effectId: EntityID)
+    /// Structural edits (non-animatable): rename a layer, or replace its content payload (text
+    /// string/font/alignment, image fit, shape geometry). Keyframed values use Set(Property|Keyframe).
+    case setLayerName(layerId: EntityID, name: String)
+    case setContent(layerId: EntityID, content: LayerContent)
     case setCompositionSetting(compId: EntityID, setting: CompositionSetting)
     /// AI/preset macros (ai-pipeline.md §4): expand deterministically into keyframe commands on
     /// apply, via the pattern library.
@@ -101,6 +105,8 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
             guard doc.compositions[ci].layers[li].effects.contains(where: { $0.id == effectId }) else {
                 throw CommandError.effectNotFound(effectId)
             }
+        case .setLayerName(let layerId, _), .setContent(let layerId, _):
+            _ = try locateLayer(layerId, in: doc)
         case .setCompositionSetting(let compId, let setting):
             guard let comp = doc.composition(compId) else { throw CommandError.compositionNotFound(compId) }
             if case .duration(let d) = setting, d <= 0 {
@@ -175,6 +181,12 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case .removeEffect(let layerId, let effectId):
             let (ci, li) = try locateLayer(layerId, in: doc)
             doc.compositions[ci].layers[li].effects.removeAll { $0.id == effectId }
+        case .setLayerName(let layerId, let name):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            doc.compositions[ci].layers[li].name = name
+        case .setContent(let layerId, let content):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            doc.compositions[ci].layers[li].content = content
         case .setCompositionSetting(let compId, let setting):
             guard let ci = doc.compositionIndex(compId) else { throw CommandError.compositionNotFound(compId) }
             switch setting {
