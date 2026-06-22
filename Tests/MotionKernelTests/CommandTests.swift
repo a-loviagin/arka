@@ -223,6 +223,20 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
     }
 
+    func testBoardPositionRoundTripsAndOmitsDefault() throws {
+        var c = frame()
+        c.boardPosition = Vec2(880, 0)
+        let placed = try JSONDecoder().decode(Composition.self, from: JSONEncoder().encode(c))
+        XCTAssertEqual(placed.boardPosition, Vec2(880, 0))
+
+        // Default (.zero) is omitted from the wire and decodes back to .zero.
+        let plain = frame() // boardPosition defaults to .zero
+        let json = String(data: try JSONEncoder().encode(plain), encoding: .utf8)!
+        XCTAssertFalse(json.contains("boardPosition"), "omitted-default keeps single-frame files clean")
+        let back = try JSONDecoder().decode(Composition.self, from: Data(json.utf8))
+        XCTAssertEqual(back.boardPosition, .zero)
+    }
+
     /// The shapes documented in MotionAI's SystemPrompt must decode + apply. If the schema drifts
     /// from the prompt, this fails — keeping the model's instructions truthful.
     func testDocumentedCommandShapesDecodeAndApply() throws {

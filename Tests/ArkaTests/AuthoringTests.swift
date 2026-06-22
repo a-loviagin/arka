@@ -246,5 +246,59 @@ final class AuthoringTests: XCTestCase {
         m.removeFrame(mainId)
         XCTAssertNotNil(m.document.composition(mainId), "the main frame cannot be deleted")
     }
+
+    func testNewFrameIsLaidOutToTheRight() throws {
+        let m = freshModel()
+        let main = try XCTUnwrap(m.mainComp)
+        let id = try XCTUnwrap(m.addFrame(width: 400, height: 400))
+        let placed = try XCTUnwrap(m.document.composition(id))
+        XCTAssertGreaterThanOrEqual(placed.boardPosition.x, main.boardPosition.x + main.size.x,
+                                    "new frame sits to the right of the existing one, with a gap")
+    }
+
+    func testBoardBoundsCoversAllFrames() throws {
+        let m = freshModel()
+        let mainSize = m.mainComp!.size
+        _ = try XCTUnwrap(m.addFrame(width: 400, height: 300))
+        let b = m.boardBounds()
+        XCTAssertEqual(b.origin.x, 0, accuracy: 0.001)
+        // Width spans the main frame + gap + the new frame.
+        XCTAssertGreaterThan(b.size.x, mainSize.x + 400)
+        XCTAssertGreaterThanOrEqual(b.size.y, mainSize.y - 0.001)
+    }
+
+    func testFittedBoardCentersTheBounds() throws {
+        let m = freshModel()
+        let view = Vec2(1000, 800)
+        let f = m.fittedBoard(viewSize: view)
+        // The board bbox center should land at the view center under (pan, zoom).
+        let b = m.boardBounds()
+        let center = b.origin + b.size * 0.5
+        let mapped = f.pan + center * f.zoom
+        XCTAssertEqual(mapped.x, view.x / 2, accuracy: 0.5)
+        XCTAssertEqual(mapped.y, view.y / 2, accuracy: 0.5)
+    }
+
+    func testZoomKeepsPointUnderCursorFixed() throws {
+        let m = freshModel()
+        m.ensureBoardFitted(viewSize: Vec2(1000, 800))
+        let cursor = Vec2(640, 360)
+        let boardBefore = Vec2((cursor.x - m.boardPan.x) / m.boardZoom,
+                               (cursor.y - m.boardPan.y) / m.boardZoom)
+        m.zoomBoard(by: 2.0, around: cursor)
+        let boardAfter = Vec2((cursor.x - m.boardPan.x) / m.boardZoom,
+                              (cursor.y - m.boardPan.y) / m.boardZoom)
+        XCTAssertEqual(boardBefore.x, boardAfter.x, accuracy: 0.01, "board point under the cursor is fixed")
+        XCTAssertEqual(boardBefore.y, boardAfter.y, accuracy: 0.01)
+    }
+
+    func testFrameHitTestByBoardPoint() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.addFrame(width: 400, height: 400))
+        let f = try XCTUnwrap(m.document.composition(id))
+        let inside = f.boardPosition + f.size * 0.5
+        XCTAssertEqual(m.frame(atBoardPoint: inside), id)
+        XCTAssertNil(m.frame(atBoardPoint: Vec2(-50, -50)), "bare workspace hits no frame")
+    }
 }
 #endif

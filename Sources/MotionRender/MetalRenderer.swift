@@ -173,6 +173,28 @@ public final class MetalRenderer {
         cmd.commit()
     }
 
+    /// Draw with a caller-supplied scene→NDC projection (the multi-frame board path, which places
+    /// each frame at a board position under a shared pan/zoom). Build it with `boardProjection`.
+    public func draw(nodes: [RenderNode], projection proj: simd_float3x3,
+                     clear: SIMD4<Double>, to drawable: CAMetalDrawable) {
+        guard let cmd = queue.makeCommandBuffer() else { return }
+        renderScene(nodes: nodes, proj: proj, clear: clear, target: drawable.texture, cmd: cmd)
+        cmd.present(drawable)
+        cmd.commit()
+    }
+
+    /// Column-major board→NDC projection: a board point `p` maps to view pixel `pan + p * zoom`,
+    /// then to NDC over a `viewport`-sized drawable (y-down → y-up). Pure (no GPU state), so callers
+    /// can also use it to keep an overlay's coordinate math in lockstep with the rendered board.
+    public func boardProjection(pan: SIMD2<Float>, zoom: Float, viewport: SIMD2<Float>) -> simd_float3x3 {
+        let vw = max(viewport.x, 1), vh = max(viewport.y, 1)
+        let sx = 2 * zoom / vw
+        let sy = -2 * zoom / vh
+        let tx = 2 * pan.x / vw - 1
+        let ty = 1 - 2 * pan.y / vh
+        return simd_float3x3(SIMD3<Float>(sx, 0, 0), SIMD3<Float>(0, sy, 0), SIMD3<Float>(tx, ty, 1))
+    }
+
     /// Render a RenderTree into a caller-supplied texture (e.g. a `CVPixelBuffer`-backed export
     /// target — render-engine.md §5). Blocks until the GPU finishes so the texture can be read or
     /// encoded. Same evaluate + encode objects as the preview path: preview/export equivalence.

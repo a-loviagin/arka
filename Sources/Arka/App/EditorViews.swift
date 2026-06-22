@@ -23,7 +23,9 @@ private struct GizmoGeo {
 struct CanvasArea: View {
     let model: DocumentModel
 
-    private enum Mode { case none, move, scale, rotate, anchor, marquee, create }
+    private enum Mode { case none, move, scale, rotate, anchor, marquee, create, pan }
+    @State private var panAccum: CGSize = .zero
+    @State private var magnifyLast: CGFloat = 1
     @State private var began = false
     @State private var mode: Mode = .none
     @State private var txn: TransactionID?
@@ -55,11 +57,14 @@ struct CanvasArea: View {
             let viewport = self.viewport(for: geo.size)
             ZStack {
                 MetalCanvasView(model: model)
+                frameChrome(viewSize: geo.size)
                 overlay(viewport: viewport, viewSize: geo.size)
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(viewport))
+            .simultaneousGesture(zoomGesture(viewSize: geo.size))
             .overlay(alignment: .topLeading) { toolbar }
+            .overlay(alignment: .bottomTrailing) { zoomControls(viewSize: geo.size) }
         }
         .background(Color.black)
     }
@@ -122,9 +127,73 @@ struct CanvasArea: View {
         }.stroke(Color.red.opacity(0.8), lineWidth: 1)
     }
 
+    /// Board → view mapping (points): `viewPoint = pan + boardPoint * zoom`. Falls back to a fitted
+    /// transform when the board hasn't been laid out yet (so the very first frame is correct).
+    private func boardViewport(for size: CGSize) -> Viewport {
+        if model.boardZoom > 0 { return Viewport(scale: model.boardZoom, offset: model.boardPan) }
+        let f = model.fittedBoard(viewSize: Vec2(size.width, size.height))
+        return Viewport(scale: f.zoom, offset: f.pan)
+    }
+
+    /// View mapping for the *active frame's* comp space — its board position folded into the offset,
+    /// so all the existing gizmo/selection/snapping math works unchanged under board pan/zoom.
     private func viewport(for size: CGSize) -> Viewport {
-        let comp = model.mainComp?.size ?? Vec2(1920, 1080)
-        return Viewport(compSize: comp, viewSize: Vec2(size.width, size.height))
+        let bv = boardViewport(for: size)
+        let pos = model.mainComp?.boardPosition ?? .zero
+        return Viewport(scale: bv.scale, offset: bv.toView(pos))
+    }
+
+    // MARK: Board chrome (frame outlines + labels) and pan/zoom controls
+
+    /// Outline + name label per frame, drawn over the rendered board. The active frame is accented;
+    /// others are dimmed. Non-interactive — activation/pan happen through the drag gesture.
+    @ViewBuilder
+    private func frameChrome(viewSize: CGSize) -> some View {
+        let bv = boardViewport(for: viewSize)
+        ForEach(model.frames, id: \.id) { frame in
+            let isActive = frame.id == model.activeCompId
+            let tl = bv.toView(frame.boardPosition)
+            let w = frame.size.x * bv.scale, h = frame.size.y * bv.scale
+            ZStack(alignment: .topLeading) {
+                Text(frame.name.isEmpty ? "Frame" : frame.name)
+                    .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                    .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+                    .fixedSize()
+                    .position(x: tl.x + 1, y: tl.y - 12) // label sits just above the frame
+                RoundedRectangle(cornerRadius: 2)
+                    .stroke(isActive ? Color.accentColor : Color.white.opacity(0.18),
+                            lineWidth: isActive ? 1.5 : 1)
+                    .frame(width: max(w, 1), height: max(h, 1))
+                    .position(x: tl.x + w / 2, y: tl.y + h / 2)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func zoomGesture(viewSize: CGSize) -> some Gesture {
+        MagnificationGesture()
+            .onChanged { v in
+                let factor = magnifyLast > 0 ? Double(v / magnifyLast) : 1
+                magnifyLast = v
+                model.zoomBoard(by: factor, around: Vec2(viewSize.width / 2, viewSize.height / 2))
+            }
+            .onEnded { _ in magnifyLast = 1 }
+    }
+
+    @ViewBuilder
+    private func zoomControls(viewSize: CGSize) -> some View {
+        let center = Vec2(viewSize.width / 2, viewSize.height / 2)
+        HStack(spacing: 2) {
+            Button { model.zoomBoard(by: 1 / 1.2, around: center) } label: { Image(systemName: "minus") }
+            Button { model.boardZoom = 0 } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }
+                .help("Fit board")
+            Button { model.zoomBoard(by: 1.2, around: center) } label: { Image(systemName: "plus") }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 11))
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(.regularMaterial, in: Capsule())
+        .padding(10)
     }
 
     // MARK: Gesture
@@ -141,6 +210,10 @@ struct CanvasArea: View {
                 case .anchor: dragAnchor(cur)
                 case .marquee: marqueeCurrent = CGPoint(x: value.location.x, y: value.location.y)
                 case .create: dragCreate(cur)
+                case .pan:
+                    let d = Vec2(value.translation.width - panAccum.width,
+                                 value.translation.height - panAccum.height)
+                    model.panBoard(by: d); panAccum = value.translation
                 case .none: break
                 }
             }
@@ -221,8 +294,15 @@ struct CanvasArea: View {
             mode = .move
             txn = model.store.begin("Move")
         } else {
-            mode = .marquee
-            marqueeStart = CGPoint(x: sp.x, y: sp.y); marqueeCurrent = marqueeStart
+            // Empty press: inside the active frame → marquee; over another frame → focus it; on the
+            // bare workspace → pan the board.
+            let boardPt = pressComp + comp.boardPosition
+            if let f = model.frame(atBoardPoint: boardPt) {
+                if f != model.activeCompId { model.setActiveFrame(f); mode = .none }
+                else { mode = .marquee; marqueeStart = CGPoint(x: sp.x, y: sp.y); marqueeCurrent = marqueeStart }
+            } else {
+                mode = .pan; panAccum = .zero
+            }
         }
     }
 

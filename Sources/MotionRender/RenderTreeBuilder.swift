@@ -38,6 +38,31 @@ public struct RenderTreeBuilder {
         buildNodes(compId: compId, at: t, visiting: [])
     }
 
+    /// Build the whole multi-frame board: every composition becomes a `Precomp` placed at its
+    /// `boardPosition` (board space = comp units), each carrying its own opaque background so frames
+    /// read as cards. The global playhead `t` evaluates every frame at the same time (each clamped
+    /// to its own duration). Draw the result with `MetalRenderer.boardProjection` for pan/zoom.
+    public func buildBoard(at t: TimeInterval) -> [RenderNode] {
+        document.compositions.map { comp in
+            let clamped = min(max(t, 0), comp.duration)
+            let children = buildNodes(compId: comp.id, at: clamped, visiting: [])
+            let size = SIMD2<Float>(Float(comp.size.x), Float(comp.size.y))
+            // Opaque full-frame background (shape local space is top-left → identity world covers it).
+            let bg = RenderItem(world: matrix_identity_float3x3, opacity: 1,
+                                content: .shape(ResolvedShape(kind: .rect, size: size, cornerRadius: 0,
+                                                              fill: SIMD4<Float>(comp.backgroundColor),
+                                                              stroke: .zero, strokeWidth: 0)))
+            return .precomp(Precomp(world: boardWorld(comp.boardPosition), opacity: 1, effects: [],
+                                    compSize: size, children: [.leaf(bg)] + children))
+        }
+    }
+
+    /// Column-major translate matching the shader's `clipFromLocal * float3(local, 1)` convention.
+    private func boardWorld(_ p: Vec2) -> simd_float3x3 {
+        simd_float3x3(SIMD3<Float>(1, 0, 0), SIMD3<Float>(0, 1, 0),
+                      SIMD3<Float>(Float(p.x), Float(p.y), 1))
+    }
+
     /// Build one composition's RenderTree by descending the parent tree, recursing into precomp
     /// layers (cycle-guarded) and isolating faded/effected groups. `visiting` guards precomp cycles.
     private func buildNodes(compId: EntityID, at t: TimeInterval,

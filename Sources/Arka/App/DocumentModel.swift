@@ -646,13 +646,20 @@ final class DocumentModel {
     func addFrame(width: Double, height: Double, name: String? = nil) -> EntityID? {
         let template = mainComp
         let n = frames.count + 1
+        // Lay the new frame to the right of the rightmost existing frame, top-aligned with the board.
+        let gap = 80.0
+        let rightEdge = frames.map { $0.boardPosition.x + $0.size.x }.max() ?? 0
+        let topY = frames.map { $0.boardPosition.y }.min() ?? 0
+        let pos = frames.isEmpty ? Vec2.zero : Vec2(rightEdge + gap, topY)
         let comp = Composition(id: ids.next("comp"), name: name ?? "Frame \(n)",
                                size: Vec2(width, height), fps: template?.fps ?? 60,
                                duration: template?.duration ?? 5,
-                               backgroundColor: template?.backgroundColor ?? .white, layers: [])
+                               backgroundColor: template?.backgroundColor ?? .white, layers: [],
+                               boardPosition: pos)
         guard (try? store.perform(.addComposition(composition: comp), label: "Add \(comp.name)")) != nil
         else { return nil }
         setActiveFrame(comp.id)
+        boardZoom = 0 // refit so the new frame is visible
         return comp.id
     }
 
@@ -664,6 +671,68 @@ final class DocumentModel {
         guard (try? store.perform(.removeComposition(compId: id), label: "Delete \(comp.name)")) != nil
         else { return }
         if activeCompId == id { setActiveFrame(document.mainCompositionId) }
+        boardZoom = 0 // refit so the board re-centers on what's left
+    }
+
+    // MARK: Board pan / zoom (multi-frame canvas viewport)
+    //
+    // Board space is in comp units; the on-screen mapping is `viewPoint = boardPan + boardPoint *
+    // boardZoom` (points). `boardZoom == 0` is the "fit on next layout" sentinel.
+
+    /// Points per board unit. 0 ⇒ not yet fitted to the view.
+    var boardZoom: Double = 0
+    /// View-space (points) position of the board origin (0,0).
+    var boardPan: Vec2 = .zero
+
+    /// Bounding box of all frames in board space.
+    func boardBounds() -> (origin: Vec2, size: Vec2) {
+        guard let first = frames.first else { return (.zero, Vec2(1, 1)) }
+        var minP = first.boardPosition
+        var maxP = first.boardPosition + first.size
+        for f in frames {
+            minP = Vec2(min(minP.x, f.boardPosition.x), min(minP.y, f.boardPosition.y))
+            maxP = Vec2(max(maxP.x, f.boardPosition.x + f.size.x), max(maxP.y, f.boardPosition.y + f.size.y))
+        }
+        return (minP, maxP - minP)
+    }
+
+    /// Pure: zoom/pan that fit the whole board (all frames) centered in a `viewSize`-point view.
+    func fittedBoard(viewSize: Vec2, padding: Double = 48) -> (zoom: Double, pan: Vec2) {
+        let b = boardBounds()
+        let aw = max(viewSize.x - 2 * padding, 1), ah = max(viewSize.y - 2 * padding, 1)
+        let s = min(aw / max(b.size.x, 1), ah / max(b.size.y, 1))
+        let center = b.origin + b.size * 0.5
+        return (s, Vec2(viewSize.x / 2 - center.x * s, viewSize.y / 2 - center.y * s))
+    }
+
+    /// Fit on the first layout (or after add/remove resets `boardZoom` to 0).
+    func ensureBoardFitted(viewSize: Vec2) {
+        guard boardZoom <= 0, viewSize.x > 1, viewSize.y > 1 else { return }
+        let f = fittedBoard(viewSize: viewSize)
+        boardZoom = f.zoom; boardPan = f.pan
+    }
+
+    /// Pan by a view-point delta.
+    func panBoard(by delta: Vec2) { boardPan = boardPan + delta }
+
+    /// Zoom by `factor`, keeping the board point under `viewPoint` (points) fixed.
+    func zoomBoard(by factor: Double, around viewPoint: Vec2) {
+        guard boardZoom > 0 else { return }
+        let boardPt = Vec2((viewPoint.x - boardPan.x) / boardZoom, (viewPoint.y - boardPan.y) / boardZoom)
+        let newZoom = min(max(boardZoom * factor, 0.02), 64)
+        boardPan = Vec2(viewPoint.x - boardPt.x * newZoom, viewPoint.y - boardPt.y * newZoom)
+        boardZoom = newZoom
+    }
+
+    /// The frame whose board rect contains a board-space point (topmost wins for overlaps).
+    func frame(atBoardPoint p: Vec2) -> EntityID? {
+        for f in frames.reversed() {
+            if p.x >= f.boardPosition.x, p.y >= f.boardPosition.y,
+               p.x <= f.boardPosition.x + f.size.x, p.y <= f.boardPosition.y + f.size.y {
+                return f.id
+            }
+        }
+        return nil
     }
 
     // MARK: Autosave / crash recovery (undo-system.md §8)

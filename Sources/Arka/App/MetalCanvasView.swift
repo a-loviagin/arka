@@ -68,20 +68,24 @@ final class CanvasNSView: NSView {
     }
 
     func render() {
-        guard let renderer = model.renderer, let comp = model.document.mainComposition,
-              let drawable = metalLayer.nextDrawable() else { return }
+        guard let renderer = model.renderer, let drawable = metalLayer.nextDrawable() else { return }
+        // Fit the board on first paint (NSView bounds are in points; pan/zoom are stored in points).
+        model.ensureBoardFitted(viewSize: Vec2(bounds.width, bounds.height))
         let t = model.playback.currentTime
         let nodes = RenderTreeBuilder(document: model.document, textEngine: model.textEngine,
                                       textures: model.textures, video: model.videoProvider,
-                                      assetBaseURL: model.assetBaseURL).build(compId: comp.id, at: t)
+                                      assetBaseURL: model.assetBaseURL).buildBoard(at: t)
         let vp = SIMD2<Float>(Float(metalLayer.drawableSize.width),
                               Float(metalLayer.drawableSize.height))
-        let bg = comp.backgroundColor
-        renderer.draw(nodes: nodes,
-                      compSize: SIMD2<Float>(Float(comp.size.x), Float(comp.size.y)),
-                      viewport: vp,
-                      clear: SIMD4<Double>(bg.r, bg.g, bg.b, bg.a),
-                      to: drawable)
+        // Stored pan/zoom are in points; the drawable is in pixels → scale by the backing factor.
+        let scale = Float(metalLayer.contentsScale)
+        let proj = renderer.boardProjection(pan: SIMD2<Float>(Float(model.boardPan.x) * scale,
+                                                              Float(model.boardPan.y) * scale),
+                                            zoom: Float(model.boardZoom) * scale,
+                                            viewport: vp)
+        // The board canvas behind the frames (editor-ui.md §1): a neutral dark workspace.
+        renderer.draw(nodes: nodes, projection: proj,
+                      clear: SIMD4<Double>(0.11, 0.11, 0.12, 1), to: drawable)
     }
 }
 
