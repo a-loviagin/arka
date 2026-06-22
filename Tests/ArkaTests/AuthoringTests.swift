@@ -97,6 +97,23 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(m.mainComp!.layers.count, undosBefore)
     }
 
+    func testAutosaveSessionRoundTrips() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("arka_rec_\(UInt32.random(in: 0..<UInt32.max)).motion")
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let m = freshModel()
+        let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(123, 45)))
+        try m.writeSession(to: tmp)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tmp.path), "recovery package written")
+
+        // A fresh model can reopen the autosaved session and recover the work.
+        let recovered = DocumentModel()
+        try recovered.open(tmp)
+        XCTAssertNotNil(recovered.layer(id), "autosaved layer recovered")
+        XCTAssertEqual(recovered.layer(id)?.transform.position.resolve(at: 0), Vec2(123, 45))
+    }
+
     func testDeleteSelectedLayersIsOneUndoStep() throws {
         let m = freshModel()
         let a = try XCTUnwrap(m.createLayer(.rect, at: Vec2(10, 10)))

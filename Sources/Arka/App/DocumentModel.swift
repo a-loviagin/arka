@@ -58,6 +58,7 @@ final class DocumentModel {
             guard let self else { return }
             self.document = self.store.document
             self.selection = self.store.selection.layerIds
+            self.scheduleAutosave()
         }
     }
 
@@ -465,6 +466,49 @@ final class DocumentModel {
         assetBaseURL = url // video assets resolve relative to the package dir
         playback.seek(to: 0)
         playback.duration = doc.mainComposition?.duration ?? 5
+    }
+
+    // MARK: Autosave / crash recovery (undo-system.md §8)
+
+    /// Where the live document is autosaved between commits. Present on launch ⇒ the last session
+    /// didn't quit cleanly, so it's offered as crash recovery. Cleared on clean termination.
+    static var recoveryURL: URL? {
+        guard let support = try? FileManager.default.url(for: .applicationSupportDirectory,
+                                                         in: .userDomainMask, appropriateFor: nil,
+                                                         create: true) else { return nil }
+        return support.appending(path: "Arka/recovery.motion")
+    }
+
+    private var autosaveWork: DispatchWorkItem?
+
+    /// Debounced (~2s after the last commit) write of the live document to the recovery file.
+    private func scheduleAutosave() {
+        guard let url = Self.recoveryURL else { return }
+        autosaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in try? self?.writeSession(to: url) }
+        autosaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    /// Write the current document as a `.motion` package (no thumbnail — autosave is for recovery,
+    /// not previews). Testable with an explicit URL.
+    func writeSession(to url: URL) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try MotionPackage.write(document, to: url, assetData: assetBytes, thumbnailPNG: nil)
+    }
+
+    /// If a recovery file exists (last session didn't quit cleanly), reopen it. Returns whether it did.
+    @discardableResult
+    func recoverIfNeeded() -> Bool {
+        guard let url = Self.recoveryURL, FileManager.default.fileExists(atPath: url.path) else { return false }
+        do { try open(url); return true } catch { return false }
+    }
+
+    /// Remove the recovery file — called on clean quit so a normal exit isn't treated as a crash.
+    func clearRecovery() {
+        autosaveWork?.cancel()
+        if let url = Self.recoveryURL { try? FileManager.default.removeItem(at: url) }
     }
 }
 #endif

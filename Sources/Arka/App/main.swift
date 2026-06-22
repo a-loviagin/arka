@@ -29,9 +29,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         buildMainMenu(target: self)
         NSApp.activate(ignoringOtherApps: true)
+
+        // Crash recovery: a leftover autosave means the last session didn't quit cleanly — reopen it.
+        if model.recoverIfNeeded() { window.title = "Arka — Recovered" }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        model.clearRecovery() // clean exit ⇒ no recovery on next launch
+    }
 
     // MARK: File menu actions
 
