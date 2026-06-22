@@ -124,6 +124,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Lottie is a document→document translation (no renderer), so it has its own simple handler:
+    /// write the JSON, then surface the compatibility lint if anything didn't map cleanly.
+    @objc func exportLottie(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "arka.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let result = try LottieExporter.export(model.document, compId: model.activeCompId)
+            try result.json.write(to: url)
+            if result.warnings.isEmpty {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } else {
+                let alert = NSAlert()
+                alert.messageText = "Exported with \(result.warnings.count) compatibility warning\(result.warnings.count == 1 ? "" : "s")"
+                alert.informativeText = result.warnings.prefix(12).joined(separator: "\n")
+                alert.addButton(withTitle: "Reveal in Finder")
+                alert.addButton(withTitle: "OK")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+            }
+        } catch {
+            let alert = NSAlert(); alert.messageText = "Lottie export failed"
+            alert.informativeText = error.localizedDescription; alert.runModal()
+        }
+    }
+
     @objc func toggleAIPanel(_ sender: Any?) { model.aiPanelVisible.toggle() }
 
     @objc func undo(_ sender: Any?) { model.store.undo() }
@@ -187,6 +215,7 @@ func buildMainMenu(target: AppDelegate) {
     add("Export ProRes (Alpha)…", #selector(AppDelegate.exportProRes(_:)), "")
     add("Export GIF…", #selector(AppDelegate.exportGIF(_:)), "")
     add("Export PNG Sequence…", #selector(AppDelegate.exportPNGSequence(_:)), "")
+    add("Export Lottie (JSON)…", #selector(AppDelegate.exportLottie(_:)), "")
     fileItem.submenu = fileMenu
 
     let editItem = NSMenuItem()
