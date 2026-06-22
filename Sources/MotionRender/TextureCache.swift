@@ -62,8 +62,9 @@ public final class TextureCache: TextureProvider {
         ctx.scaleBy(x: 1, y: -1)
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
 
+        // sRGB texture → samples auto-decode to linear, matching the renderer's linear working space.
         let desc = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: w, height: h, mipmapped: false)
+            pixelFormat: .rgba8Unorm_srgb, width: w, height: h, mipmapped: false)
         desc.usage = .shaderRead
         desc.storageMode = .shared
         guard let texture = device.makeTexture(descriptor: desc) else { return nil }

@@ -202,7 +202,7 @@ public final class VideoExporter {
         var cvTexture: CVMetalTexture?
         let status = CVMetalTextureCacheCreateTextureFromImage(
             kCFAllocatorDefault, cache, pixelBuffer, nil,
-            .bgra8Unorm, width, height, 0, &cvTexture)
+            .bgra8Unorm_srgb, width, height, 0, &cvTexture)
         guard status == kCVReturnSuccess, let cvTexture,
               let texture = CVMetalTextureGetTexture(cvTexture) else { return nil }
         return texture

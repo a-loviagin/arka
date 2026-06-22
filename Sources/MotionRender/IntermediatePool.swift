@@ -22,7 +22,7 @@ final class IntermediatePool {
             texture = reused
         } else {
             let desc = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+                pixelFormat: .bgra8Unorm_srgb, width: width, height: height, mipmapped: false)
             desc.usage = [.renderTarget, .shaderRead]
             desc.storageMode = .private
             guard let t = device.makeTexture(descriptor: desc) else { return nil }

@@ -89,15 +89,16 @@ final class RenderGoldenTests: XCTestCase {
     }
 
     func testOpacityCompositesOverBackground() {
-        // White rect at 50% opacity over black → ~half gray (pre-multiplied "over").
+        // White rect at 50% opacity over black, composited in LINEAR space: linear 0.5 → sRGB ≈ 188
+        // (the gamma-space ≈128 would be the incorrect blend — render-engine.md §4).
         let d = doc(size: 64, bg: .black,
                     layers: [rect("r", at: Vec2(32, 32), size: Vec2(50, 50),
                                   fill: .white, opacity: .static(0.5))])
         let img = render(d, at: 0, size: 64)
         let p = img.pixel(32, 32)
-        assertChannel(p.r, 128, tol: 4, "half.r")
-        assertChannel(p.g, 128, tol: 4, "half.g")
-        assertChannel(p.b, 128, tol: 4, "half.b")
+        assertChannel(p.r, 188, tol: 4, "half.r")
+        assertChannel(p.g, 188, tol: 4, "half.g")
+        assertChannel(p.b, 188, tol: 4, "half.b")
     }
 
     func testAnimationMovesShapeOverTime() {
@@ -275,8 +276,9 @@ final class RenderGoldenTests: XCTestCase {
         ])
         let d = MotionDocument(id: "d", compositions: [main, sub], mainCompositionId: "comp_main")
         let img = render(d, at: 0, size: 100)
-        // White sub-content at 50% over black → ~half gray; opacity applies to the whole precomp.
-        assertChannel(img.pixel(50, 50).r, 128, tol: 6, "precomp opacity halves white")
+        // White sub-content at 50% over black, composited in linear → sRGB ≈ 188; opacity applies
+        // to the whole precomp.
+        assertChannel(img.pixel(50, 50).r, 188, tol: 6, "precomp opacity halves white")
     }
 
     // MARK: Group opacity isolation
@@ -307,7 +309,7 @@ final class RenderGoldenTests: XCTestCase {
         let iso = render(groupDoc(groupOpacity: 0.5, childOpacity: 1.0), at: 0, size: 100)
         let isoSingle = iso.pixel(25, 50).r
         let isoOverlap = iso.pixel(50, 50).r
-        XCTAssertEqual(Int(isoSingle), 128, accuracy: 8, "single-child region at group opacity")
+        XCTAssertEqual(Int(isoSingle), 188, accuracy: 8, "single-child region at group opacity (linear)")
         XCTAssertEqual(Int(isoOverlap), Int(isoSingle), accuracy: 8, "isolation: overlap matches single")
 
         // Non-isolated control: opaque group (1.0), 50%-per-child. Overlap is brighter than single.

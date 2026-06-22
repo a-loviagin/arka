@@ -21,7 +21,7 @@ final class CanvasNSView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         metalLayer.device = model.device
-        metalLayer.pixelFormat = .bgra8Unorm
+        metalLayer.pixelFormat = .bgra8Unorm_srgb // linear-space compositing (render-engine.md §4)
         metalLayer.framebufferOnly = true
         metalLayer.isOpaque = true
     }

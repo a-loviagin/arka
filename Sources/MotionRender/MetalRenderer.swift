@@ -80,7 +80,7 @@ public final class MetalRenderer {
             desc.vertexFunction = library.makeFunction(name: vfn)
             desc.fragmentFunction = library.makeFunction(name: ffn)
             let c = desc.colorAttachments[0]!
-            c.pixelFormat = .bgra8Unorm
+            c.pixelFormat = .bgra8Unorm_srgb // linear-space compositing (render-engine.md §4)
             c.isBlendingEnabled = blend
             c.rgbBlendOperation = .add
             c.alphaBlendOperation = .add
@@ -161,7 +161,7 @@ public final class MetalRenderer {
         let proj = projection(compSize: compSize, viewport: vp)
 
         let desc = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: pixelSize.width, height: pixelSize.height, mipmapped: false)
+            pixelFormat: .bgra8Unorm_srgb, width: pixelSize.width, height: pixelSize.height, mipmapped: false)
         desc.usage = [.renderTarget, .shaderRead]
         desc.storageMode = .shared // Apple Silicon: CPU-readable without a blit
         guard let texture = device.makeTexture(descriptor: desc),
@@ -471,8 +471,17 @@ public final class MetalRenderer {
         pass.colorAttachments[0].texture = target
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].storeAction = .store
-        pass.colorAttachments[0].clearColor = MTLClearColor(red: clear.x, green: clear.y, blue: clear.z, alpha: clear.w)
+        // sRGB targets sRGB-encode on store, so the clear value must be given in linear space to end
+        // up as the intended sRGB color (the clear comes in sRGB-encoded, like every ColorValue).
+        pass.colorAttachments[0].clearColor = MTLClearColor(
+            red: Self.srgbToLinear(clear.x), green: Self.srgbToLinear(clear.y),
+            blue: Self.srgbToLinear(clear.z), alpha: clear.w)
         return pass
+    }
+
+    /// sRGB → linear for a single channel (matches the shader's `srgbToLinear`).
+    private static func srgbToLinear(_ c: Double) -> Double {
+        c > 0.04045 ? pow((c + 0.055) / 1.055, 2.4) : c / 12.92
     }
 }
 #endif

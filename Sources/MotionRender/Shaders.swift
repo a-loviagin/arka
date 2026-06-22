@@ -15,6 +15,14 @@ enum ShaderSource {
     #include <metal_stdlib>
     using namespace metal;
 
+    // Render targets are sRGB-format, so the GPU sRGB-encodes on store and decodes on sample —
+    // i.e. all blending/blur/compositing happens in LINEAR space (render-engine.md §4). Colors enter
+    // the shaders sRGB-encoded (ColorValue is stored sRGB), so linearize them before output; texture
+    // samples are already linear (sRGB textures auto-decode). Alpha is linear in both spaces.
+    static inline float3 srgbToLinear(float3 c) {
+        return select(c / 12.92, pow((c + 0.055) / 1.055, 3.0), c > 0.04045);
+    }
+
     // ---- SDF shapes -------------------------------------------------------------------------
     struct InstanceUniform {
         float3x3 clipFromLocal;
@@ -86,13 +94,13 @@ enum ShaderSource {
         }
         float4 fill = inst.fill;
         float4 stroke = inst.stroke;
-        float3 rgb = fill.rgb;
+        float3 rgb = srgbToLinear(fill.rgb);
         float a = fill.a * fillCov;
         float sa = stroke.a * strokeCov;
-        rgb = mix(rgb, stroke.rgb, sa);
+        rgb = mix(rgb, srgbToLinear(stroke.rgb), sa);
         a = max(a, sa);
         a *= inst.opacity;
-        return float4(rgb * a, a);
+        return float4(rgb * a, a); // linear, pre-multiplied (sRGB-encoded on store)
     }
 
     // ---- Vector paths (tessellated fill) ---------------------------------------------------
@@ -117,7 +125,7 @@ enum ShaderSource {
     fragment float4 path_fragment(PathOut in [[stage_in]],
                                   constant PathUniform &u [[buffer(0)]]) {
         float a = u.fill.a * u.opacity;
-        return float4(u.fill.rgb * a, a); // pre-multiplied
+        return float4(srgbToLinear(u.fill.rgb) * a, a); // linear, pre-multiplied
     }
 
     // ---- Textured quads (glyphs / images) --------------------------------------------------
@@ -161,7 +169,7 @@ enum ShaderSource {
         constant GlyphInstance &inst = instances[in.instance];
         float coverage = atlas.sample(samp, in.uv).r;
         float a = coverage * inst.tint.a * inst.opacity;
-        return float4(inst.tint.rgb * a, a); // pre-multiplied
+        return float4(srgbToLinear(inst.tint.rgb) * a, a); // linear, pre-multiplied
     }
 
     // Image quads: sample a pre-multiplied RGBA texture, scale by chain opacity. Shares the
@@ -221,10 +229,10 @@ enum ShaderSource {
                                        texture2d<float> tex [[texture(0)]],
                                        sampler samp [[sampler(0)]],
                                        constant CompositeParams &p [[buffer(0)]]) {
-        float4 c = tex.sample(samp, in.uv); // pre-multiplied
+        float4 c = tex.sample(samp, in.uv); // linear, pre-multiplied (sRGB texture auto-decodes)
         if (p.mode == 1u) {
             float a = c.a * p.opacity;
-            return float4(p.tint.rgb * a, a);
+            return float4(srgbToLinear(p.tint.rgb) * a, a); // shadow tint, linearized
         }
         return c * p.opacity;
     }

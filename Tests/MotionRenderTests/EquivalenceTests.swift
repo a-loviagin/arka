@@ -68,7 +68,7 @@ final class EquivalenceTests: XCTestCase {
         let cache = try XCTUnwrap(cacheRef)
         var cvTex: CVMetalTexture?
         XCTAssertEqual(CVMetalTextureCacheCreateTextureFromImage(
-            kCFAllocatorDefault, cache, pixelBuffer, nil, .bgra8Unorm, width, height, 0, &cvTex),
+            kCFAllocatorDefault, cache, pixelBuffer, nil, .bgra8Unorm_srgb, width, height, 0, &cvTex),
             kCVReturnSuccess)
         let texture = try XCTUnwrap(CVMetalTextureGetTexture(try XCTUnwrap(cvTex)))
 
