@@ -156,6 +156,27 @@ final class AuthoringTests: XCTestCase {
         XCTAssertTrue(s3.fillColor?.isAnimated ?? false, "keyframe toggle animates fill")
     }
 
+    func testToggleAndEditGradient() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(100, 100)))
+        m.toggleGradient(id)
+        guard case .shape(let s1)? = m.layer(id)?.content else { return XCTFail("shape") }
+        XCTAssertNotNil(s1.gradient, "gradient added")
+        XCTAssertEqual(s1.gradient?.stops.count, 2, "default is a 2-stop gradient")
+
+        m.setGradientStopColor(id, stop: 0, color: ColorValue(hex: "#FF0000")!)
+        guard case .shape(let s2)? = m.layer(id)?.content else { return XCTFail("shape") }
+        XCTAssertEqual(s2.gradient?.stops.first?.color.resolve(at: 0).r ?? 0, 1.0, accuracy: 0.01)
+
+        m.setGradientKind(id, .radial)
+        guard case .shape(let s3)? = m.layer(id)?.content else { return XCTFail("shape") }
+        XCTAssertEqual(s3.gradient?.kind, .radial)
+
+        m.toggleGradient(id)
+        guard case .shape(let s4)? = m.layer(id)?.content else { return XCTFail("shape") }
+        XCTAssertNil(s4.gradient, "toggled back off")
+    }
+
     func testSetBlendMode() throws {
         let m = freshModel()
         let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))

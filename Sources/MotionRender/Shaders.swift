@@ -23,6 +23,16 @@ enum ShaderSource {
         return select(c / 12.92, pow((c + 0.055) / 1.055, 3.0), c > 0.04045);
     }
 
+    // Gradient fill (Tier 2): endpoints in layer-local points; linear projects along the axis,
+    // radial uses distance / radius. Sampled from a baked sRGB LUT. `hasGradient` gates it so flat
+    // draws never sample (a dummy 1×1 LUT is still bound to satisfy the binding).
+    struct GradientParams { float2 start; float2 end; uint kind; uint hasGradient; };
+    static inline float gradientT(float2 local, constant GradientParams &g) {
+        float2 d = g.end - g.start;
+        if (g.kind == 1u) { return clamp(length(local - g.start) / max(length(d), 1e-4), 0.0, 1.0); }
+        return clamp(dot(local - g.start, d) / max(dot(d, d), 1e-4), 0.0, 1.0);
+    }
+
     // ---- SDF shapes -------------------------------------------------------------------------
     struct InstanceUniform {
         float3x3 clipFromLocal;
@@ -74,7 +84,10 @@ enum ShaderSource {
     }
 
     fragment float4 shape_fragment(ShapeOut in [[stage_in]],
-                                   constant InstanceUniform *instances [[buffer(0)]]) {
+                                   constant InstanceUniform *instances [[buffer(0)]],
+                                   constant GradientParams &grad [[buffer(1)]],
+                                   texture2d<float> lut [[texture(0)]],
+                                   sampler samp [[sampler(0)]]) {
         constant InstanceUniform &inst = instances[in.instance];
         float2 halfSize = inst.size * 0.5;
         float2 p = in.local - halfSize;
@@ -93,6 +106,7 @@ enum ShaderSource {
             strokeCov = 1.0 - smoothstep(hw - aa, hw + aa, abs(d));
         }
         float4 fill = inst.fill;
+        if (grad.hasGradient == 1u) { fill = lut.sample(samp, float2(gradientT(in.local, grad), 0.5)); }
         float4 stroke = inst.stroke;
         float3 rgb = srgbToLinear(fill.rgb);
         float a = fill.a * fillCov;
@@ -111,7 +125,7 @@ enum ShaderSource {
         float opacity;
     };
 
-    struct PathOut { float4 position [[position]]; };
+    struct PathOut { float4 position [[position]]; float2 local; };
 
     vertex PathOut path_vertex(uint vid [[vertex_id]],
                                constant float2 *verts [[buffer(0)]],
@@ -119,13 +133,19 @@ enum ShaderSource {
         float3 clip = u.clipFromLocal * float3(verts[vid], 1.0);
         PathOut o;
         o.position = float4(clip.xy, 0.0, 1.0);
+        o.local = verts[vid];
         return o;
     }
 
     fragment float4 path_fragment(PathOut in [[stage_in]],
-                                  constant PathUniform &u [[buffer(0)]]) {
-        float a = u.fill.a * u.opacity;
-        return float4(srgbToLinear(u.fill.rgb) * a, a); // linear, pre-multiplied
+                                  constant PathUniform &u [[buffer(0)]],
+                                  constant GradientParams &grad [[buffer(1)]],
+                                  texture2d<float> lut [[texture(0)]],
+                                  sampler samp [[sampler(0)]]) {
+        float4 fill = u.fill;
+        if (grad.hasGradient == 1u) { fill = lut.sample(samp, float2(gradientT(in.local, grad), 0.5)); }
+        float a = fill.a * u.opacity;
+        return float4(srgbToLinear(fill.rgb) * a, a); // linear, pre-multiplied
     }
 
     // ---- Textured quads (glyphs / images) --------------------------------------------------

@@ -103,6 +103,18 @@ struct ResolvedShape {
     var fill: SIMD4<Float>      // straight (non-premultiplied) sRGB-encoded rgba
     var stroke: SIMD4<Float>
     var strokeWidth: Float
+    var gradient: ResolvedGradient? = nil  // when set, overrides `fill`
+}
+
+/// A gradient fill resolved at one time: endpoints in layer-local points + sorted color stops. The
+/// renderer bakes the stops into a 1-D LUT, and the shape/path fragment samples it by a coordinate
+/// from `start`/`end` (linear: projection along the axis; radial: distance / radius).
+struct ResolvedGradient: Equatable {
+    var kind: UInt32                                  // 0 = linear, 1 = radial
+    var start: SIMD2<Float>
+    var end: SIMD2<Float>
+    var stops: [Stop]
+    struct Stop: Equatable { var position: Float; var color: SIMD4<Float> }
 }
 
 extension simd_float3x3 {

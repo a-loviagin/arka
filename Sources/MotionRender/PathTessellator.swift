@@ -9,6 +9,7 @@ import MotionKernel
 struct PathMesh {
     var vertices: [SIMD2<Float>]   // 3 per triangle
     var fill: SIMD4<Float>         // straight sRGB rgba (premultiplied in the shader)
+    var gradient: ResolvedGradient? = nil  // when set, overrides `fill` (fill meshes only)
 }
 
 enum PathTessellator {

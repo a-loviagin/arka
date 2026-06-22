@@ -24,6 +24,14 @@ struct PathUniform {
     var opacity: Float
 }
 
+/// Gradient fill params for the shape/path fragments. **Must match `GradientParams` in Shaders.swift.**
+struct GradientParams {
+    var start: SIMD2<Float> = .zero
+    var end: SIMD2<Float> = .zero
+    var kind: UInt32 = 0
+    var hasGradient: UInt32 = 0
+}
+
 /// Per-instance textured-quad data (glyphs / images). **Must match `GlyphInstance` in Shaders.swift.**
 struct GlyphInstance {
     var clipFromLocal: simd_float3x3
@@ -56,6 +64,9 @@ public final class MetalRenderer {
     private let backdropPipeline: MTLRenderPipelineState
     private let sampler: MTLSamplerState
     private let pool: IntermediatePool
+    /// 1×1 white LUT bound to shape/path draws that have no gradient (the fragment ignores it when
+    /// `hasGradient == 0`, but a texture must still be bound).
+    private lazy var dummyLUT: MTLTexture = makeLUT([SIMD4<Float>(1, 1, 1, 1)])
 
     /// Blur kernel parameters — must match `BlurParams` in Shaders.swift.
     private struct BlurParams { var texelStep: SIMD2<Float>; var sigma: Float; var taps: Int32 }
@@ -154,7 +165,9 @@ public final class MetalRenderer {
 
     private enum DrawOp {
         case shapes(base: Int, count: Int)
-        case path(buffer: MTLBuffer, count: Int, uniform: PathUniform)
+        /// A single gradient-filled shape (broken out of the flat batch — it binds its own LUT).
+        case gradientShape(base: Int, gradient: ResolvedGradient)
+        case path(buffer: MTLBuffer, count: Int, uniform: PathUniform, gradient: ResolvedGradient?)
         case glyphs(base: Int, count: Int, texture: MTLTexture)
         case image(base: Int, texture: MTLTexture)
         case composite(CompositeOp)
@@ -341,16 +354,24 @@ public final class MetalRenderer {
             let clip = proj * item.world
             switch item.content {
             case .shape(let s):
-                if pendingShapeCount == 0 { pendingShapeBase = shapes.count }
-                shapes.append(shapeInstance(s, clip: clip, opacity: item.opacity))
-                pendingShapeCount += 1
+                if let g = s.gradient { // gradient shapes bind their own LUT → can't batch
+                    flushShapes()
+                    let idx = shapes.count
+                    shapes.append(shapeInstance(s, clip: clip, opacity: item.opacity))
+                    ops.append(.gradientShape(base: idx, gradient: g))
+                } else {
+                    if pendingShapeCount == 0 { pendingShapeBase = shapes.count }
+                    shapes.append(shapeInstance(s, clip: clip, opacity: item.opacity))
+                    pendingShapeCount += 1
+                }
             case .path(let meshes):
                 flushShapes()
                 for mesh in meshes {
                     if let buf = makeBuffer(mesh.vertices) {
                         transient.append(buf)
                         ops.append(.path(buffer: buf, count: mesh.vertices.count,
-                                         uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: item.opacity)))
+                                         uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: item.opacity),
+                                         gradient: mesh.gradient))
                     }
                 }
             case .glyphRun(let run):
@@ -378,8 +399,10 @@ public final class MetalRenderer {
             switch op {
             case .shapes(let base, let count):
                 if let buf = shapeBuf { drawShapes(enc, buf, base: base, count: count) }
-            case .path(let buffer, let count, let uniform):
-                drawPath(enc, buffer, count: count, uniform: uniform)
+            case .gradientShape(let base, let gradient):
+                if let buf = shapeBuf { drawShapes(enc, buf, base: base, count: 1, gradient: gradient) }
+            case .path(let buffer, let count, let uniform, let gradient):
+                drawPath(enc, buffer, count: count, uniform: uniform, gradient: gradient)
             case .glyphs(let base, let count, let texture):
                 if let buf = glyphBuf { drawTextured(enc, glyphPipeline, buf, base: base, count: count, texture: texture) }
             case .image(let base, let texture):
@@ -479,14 +502,15 @@ public final class MetalRenderer {
         switch item.content {
         case .shape(let s):
             if let buf = makeBuffer([shapeInstance(s, clip: clip, opacity: 1)]) {
-                transient.append(buf); drawShapes(enc, buf, base: 0, count: 1)
+                transient.append(buf); drawShapes(enc, buf, base: 0, count: 1, gradient: s.gradient)
             }
         case .path(let meshes):
             for mesh in meshes {
                 if let buf = makeBuffer(mesh.vertices) {
                     transient.append(buf)
                     drawPath(enc, buf, count: mesh.vertices.count,
-                             uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: 1))
+                             uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: 1),
+                             gradient: mesh.gradient)
                 }
             }
         case .glyphRun(let run):
@@ -528,22 +552,88 @@ public final class MetalRenderer {
 
     // MARK: Draw helpers
 
-    private func drawShapes(_ enc: MTLRenderCommandEncoder, _ buf: MTLBuffer, base: Int, count: Int) {
+    private func drawShapes(_ enc: MTLRenderCommandEncoder, _ buf: MTLBuffer, base: Int, count: Int,
+                            gradient: ResolvedGradient? = nil) {
         var b = UInt32(base)
         enc.setRenderPipelineState(shapePipeline)
         enc.setVertexBuffer(buf, offset: 0, index: 0)
         enc.setVertexBytes(&b, length: 4, index: 1)
         enc.setFragmentBuffer(buf, offset: 0, index: 0)
+        bindGradient(enc, gradient)
         enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: count)
     }
 
-    private func drawPath(_ enc: MTLRenderCommandEncoder, _ buf: MTLBuffer, count: Int, uniform: PathUniform) {
+    private func drawPath(_ enc: MTLRenderCommandEncoder, _ buf: MTLBuffer, count: Int,
+                          uniform: PathUniform, gradient: ResolvedGradient? = nil) {
         var u = uniform
         enc.setRenderPipelineState(pathPipeline)
         enc.setVertexBuffer(buf, offset: 0, index: 0)
         enc.setVertexBytes(&u, length: MemoryLayout<PathUniform>.stride, index: 1)
         enc.setFragmentBytes(&u, length: MemoryLayout<PathUniform>.stride, index: 0)
+        bindGradient(enc, gradient)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: count)
+    }
+
+    /// Bind the gradient LUT + params at fragment slot 1 / texture 0 for the shape & path pipelines.
+    /// A dummy LUT + `hasGradient == 0` is bound when there's no gradient (the fragment ignores it).
+    private func bindGradient(_ enc: MTLRenderCommandEncoder, _ g: ResolvedGradient?) {
+        var params = GradientParams()
+        var lut = dummyLUT
+        if let g {
+            params = GradientParams(start: g.start, end: g.end, kind: g.kind, hasGradient: 1)
+            lut = makeGradientLUT(g)
+        }
+        enc.setFragmentBytes(&params, length: MemoryLayout<GradientParams>.stride, index: 1)
+        enc.setFragmentTexture(lut, index: 0)
+        enc.setFragmentSamplerState(sampler, index: 0)
+    }
+
+    /// Bake a gradient's stops into a 256×1 sRGB-encoded LUT (the fragment linearizes on sample).
+    private func makeGradientLUT(_ g: ResolvedGradient) -> MTLTexture {
+        let stops = g.stops.isEmpty
+            ? [ResolvedGradient.Stop(position: 0, color: SIMD4<Float>(0, 0, 0, 1)),
+               ResolvedGradient.Stop(position: 1, color: SIMD4<Float>(1, 1, 1, 1))]
+            : g.stops.sorted { $0.position < $1.position }
+        var colors = [SIMD4<Float>](); colors.reserveCapacity(256)
+        for i in 0..<256 { colors.append(sampleStops(stops, Float(i) / 255)) }
+        return makeLUT(colors)
+    }
+
+    private func sampleStops(_ stops: [ResolvedGradient.Stop], _ t: Float) -> SIMD4<Float> {
+        guard let first = stops.first else { return SIMD4<Float>(0, 0, 0, 1) }
+        if t <= first.position { return first.color }
+        if t >= stops.last!.position { return stops.last!.color }
+        for i in 1..<stops.count {
+            let a = stops[i - 1], b = stops[i]
+            if t <= b.position {
+                let span = max(b.position - a.position, 1e-5)
+                let f = (t - a.position) / span
+                return a.color + (b.color - a.color) * f
+            }
+        }
+        return stops.last!.color
+    }
+
+    /// A `colors.count`×1 RGBA8 texture holding sRGB-encoded bytes (clamp-sampled as a LUT).
+    private func makeLUT(_ colors: [SIMD4<Float>]) -> MTLTexture {
+        let w = max(colors.count, 1)
+        let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: w,
+                                                            height: 1, mipmapped: false)
+        desc.usage = .shaderRead
+        desc.storageMode = .shared
+        let tex = device.makeTexture(descriptor: desc)!
+        var bytes = [UInt8](repeating: 0, count: w * 4)
+        for (i, c) in colors.enumerated() {
+            bytes[i * 4 + 0] = UInt8(max(0, min(1, c.x)) * 255)
+            bytes[i * 4 + 1] = UInt8(max(0, min(1, c.y)) * 255)
+            bytes[i * 4 + 2] = UInt8(max(0, min(1, c.z)) * 255)
+            bytes[i * 4 + 3] = UInt8(max(0, min(1, c.w)) * 255)
+        }
+        bytes.withUnsafeBytes {
+            tex.replace(region: MTLRegionMake2D(0, 0, w, 1), mipmapLevel: 0,
+                        withBytes: $0.baseAddress!, bytesPerRow: w * 4)
+        }
+        return tex
     }
 
     private func drawTextured(_ enc: MTLRenderCommandEncoder, _ pipeline: MTLRenderPipelineState,

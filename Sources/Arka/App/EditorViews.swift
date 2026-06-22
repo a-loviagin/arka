@@ -749,7 +749,10 @@ struct InspectorView: View {
                 onChange: { v, txn in model.setAnimatable(path: sizePath, value: .vec2(Vec2(liveSize(id).x, max(v, 1))), isAnimated: s.size.isAnimated, within: txn) },
                 onEnd: { model.store.commit($0) })
         }
-        colorRow("Fill", id, "content/fillColor", s.fillColor, defaultColor: .black)
+        if s.gradient == nil {
+            colorRow("Fill", id, "content/fillColor", s.fillColor, defaultColor: .black)
+        }
+        gradientControls(id, s)
         colorRow("Stroke", id, "content/strokeColor", s.strokeColor, defaultColor: .clear)
         scalarRow("Stroke W", id, "content/strokeWidth", s.strokeWidth ?? .static(0), sensitivity: 0.5)
         if s.geometry == .rect {
@@ -760,6 +763,36 @@ struct InspectorView: View {
             scalarRow("Trim Start", id, "content/trimStart", s.trimStart ?? .static(0), format: "%.2f", sensitivity: 0.01)
             scalarRow("Trim End", id, "content/trimEnd", s.trimEnd ?? .static(1), format: "%.2f", sensitivity: 0.01)
             scalarRow("Trim Offset", id, "content/trimOffset", s.trimOffset ?? .static(0), format: "%.2f", sensitivity: 0.01)
+        }
+    }
+
+    /// Gradient fill: a toggle, and (when present) a linear/radial picker plus a color well per stop.
+    /// Stop colors live in an array, so they write through `SetContent`, not the generic path system.
+    @ViewBuilder private func gradientControls(_ id: EntityID, _ s: ShapeContent) -> some View {
+        HStack(spacing: 6) {
+            Text("Gradient").font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
+            Button(s.gradient == nil ? "Add" : "Remove") { model.toggleGradient(id) }
+                .font(.caption2).buttonStyle(.bordered)
+            if let g = s.gradient {
+                Picker("", selection: Binding(get: { g.kind },
+                                              set: { model.setGradientKind(id, $0) })) {
+                    Text("Linear").tag(GradientKind.linear)
+                    Text("Radial").tag(GradientKind.radial)
+                }.labelsHidden().frame(width: 90)
+            }
+            Spacer()
+        }
+        if let g = s.gradient {
+            HStack(spacing: 6) {
+                Text("Stops").font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
+                ForEach(Array(g.stops.enumerated()), id: \.offset) { idx, stop in
+                    ColorPicker("", selection: Binding(
+                        get: { stop.color.resolve(at: t).swiftUIColor },
+                        set: { model.setGradientStopColor(id, stop: idx, color: ColorValue(swiftUI: $0)) }
+                    ), supportsOpacity: true).labelsHidden()
+                }
+                Spacer()
+            }
         }
     }
 

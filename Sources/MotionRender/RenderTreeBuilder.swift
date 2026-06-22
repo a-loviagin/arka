@@ -102,8 +102,10 @@ public struct RenderTreeBuilder {
                 if shape.geometry == .path {
                     guard let p = shape.path else { continue }
                     var meshes: [PathMesh] = []
-                    if let fc = shape.fillColor?.resolve(at: t), fc.a > 0.001,
-                       let fillMesh = PathTessellator.mesh(p, fill: SIMD4<Float>(fc)) {
+                    let grad = shape.gradient.map { resolveGradient($0, at: t) }
+                    if grad != nil || (shape.fillColor?.resolve(at: t).a ?? 0) > 0.001,
+                       var fillMesh = PathTessellator.mesh(p, fill: SIMD4<Float>(shape.fillColor?.resolve(at: t) ?? .clear)) {
+                        fillMesh.gradient = grad
                         meshes.append(fillMesh)
                     }
                     if let sc = shape.strokeColor?.resolve(at: t),
@@ -244,8 +246,21 @@ public struct RenderTreeBuilder {
             cornerRadius: Float(corner),
             fill: SIMD4<Float>(fill),
             stroke: SIMD4<Float>(stroke),
-            strokeWidth: Float(strokeWidth)
+            strokeWidth: Float(strokeWidth),
+            gradient: shape.gradient.map { resolveGradient($0, at: t) }
         )
+    }
+
+    private func resolveGradient(_ g: GradientFill, at t: TimeInterval) -> ResolvedGradient {
+        let s = g.start.resolve(at: t), e = g.end.resolve(at: t)
+        return ResolvedGradient(
+            kind: g.kind == .radial ? 1 : 0,
+            start: SIMD2<Float>(Float(s.x), Float(s.y)),
+            end: SIMD2<Float>(Float(e.x), Float(e.y)),
+            stops: g.stops.map { stop in
+                ResolvedGradient.Stop(position: Float(stop.position.resolve(at: t)),
+                                      color: SIMD4<Float>(stop.color.resolve(at: t)))
+            })
     }
 }
 #endif

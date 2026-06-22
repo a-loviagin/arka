@@ -10,6 +10,17 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 24 — Tier-2 animations: stroke, trim, gradient (done).** The "wow" set from
+properties-and-commands.md §1 Tier 2.
+- **Path stroke** — vector paths stroke as well as fill: `PathStroker` ribbons each subpath at
+  `strokeWidth` (clamped miter joins). A path is one layer (ordered fill+stroke sub-meshes) so
+  effects/blend apply to the unit.
+- **Trim paths** — `trimStart`/`trimEnd`/`trimOffset` slice the stroke by arc length for line-drawing
+  animations; `trimOffset` wraps the seam on closed paths. Animatable, addressable, inspector rows.
+- **Gradient fills** — `GradientFill` (linear/radial, animatable stops + endpoints) on shapes and
+  paths, baked into a LUT and sampled in the shape/path fragment (flat draws bind a dummy LUT, so
+  the batched path is untouched). Inspector: add/remove, linear↔radial, per-stop color wells. 171 tests.
+
 **Phase 23 — multi-frame canvas (done).** A Figma-style board: a document holds many
 **frames**, each frame *is* a `Composition` (its own size, fps, duration, timeline, and layers).
 - **Slice 1 (done)** — `AddComposition` / `RemoveComposition` kernel commands; an active-frame model

@@ -126,6 +126,34 @@ public struct PathData: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Gradient fill
+
+public enum GradientKind: String, Codable, Sendable, Equatable { case linear, radial }
+
+/// One gradient stop: a color at a normalized position (0…1 along the gradient). Both animatable
+/// (properties-and-commands.md §1, Tier 2).
+public struct GradientStop: Codable, Sendable, Equatable {
+    public var position: AnimatableValue<Double>
+    public var color: AnimatableValue<ColorValue>
+    public init(position: AnimatableValue<Double>, color: AnimatableValue<ColorValue>) {
+        self.position = position; self.color = color
+    }
+}
+
+/// A gradient shape fill. `start`/`end` are in layer-local points: for `.linear` they're the two
+/// ends of the axis; for `.radial`, `start` is the center and `|end − start|` the radius. When a
+/// `ShapeContent.gradient` is present it overrides `fillColor`.
+public struct GradientFill: Codable, Sendable, Equatable {
+    public var kind: GradientKind
+    public var start: AnimatableValue<Vec2>
+    public var end: AnimatableValue<Vec2>
+    public var stops: [GradientStop]
+    public init(kind: GradientKind = .linear, start: AnimatableValue<Vec2>,
+                end: AnimatableValue<Vec2>, stops: [GradientStop]) {
+        self.kind = kind; self.start = start; self.end = end; self.stops = stops
+    }
+}
+
 public struct ShapeContent: Codable, Sendable, Equatable {
     public var geometry: ShapeGeometry
     /// Rect/ellipse size in points (distinct from `scale` — animating `size` keeps stroke width).
@@ -143,6 +171,8 @@ public struct ShapeContent: Codable, Sendable, Equatable {
     public var trimStart: AnimatableValue<Double>?
     public var trimEnd: AnimatableValue<Double>?
     public var trimOffset: AnimatableValue<Double>?
+    /// Gradient fill; overrides `fillColor` when present (Tier 2).
+    public var gradient: GradientFill?
 
     public init(geometry: ShapeGeometry,
                 size: AnimatableValue<Vec2> = .static(Vec2(100, 100)),
@@ -153,7 +183,8 @@ public struct ShapeContent: Codable, Sendable, Equatable {
                 path: PathData? = nil,
                 trimStart: AnimatableValue<Double>? = nil,
                 trimEnd: AnimatableValue<Double>? = nil,
-                trimOffset: AnimatableValue<Double>? = nil) {
+                trimOffset: AnimatableValue<Double>? = nil,
+                gradient: GradientFill? = nil) {
         self.geometry = geometry
         self.size = size
         self.fillColor = fillColor
@@ -164,12 +195,13 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         self.trimStart = trimStart
         self.trimEnd = trimEnd
         self.trimOffset = trimOffset
+        self.gradient = gradient
     }
 
     // Omitted = default (schema §1): only `geometry` is required; size/fill default, the rest nil.
     private enum CodingKeys: String, CodingKey {
         case geometry, size, fillColor, strokeColor, strokeWidth, cornerRadius, path
-        case trimStart, trimEnd, trimOffset
+        case trimStart, trimEnd, trimOffset, gradient
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -183,6 +215,7 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         trimStart = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .trimStart)
         trimEnd = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .trimEnd)
         trimOffset = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .trimOffset)
+        gradient = try c.decodeIfPresent(GradientFill.self, forKey: .gradient)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -196,6 +229,7 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         try c.encodeIfPresent(trimStart, forKey: .trimStart)
         try c.encodeIfPresent(trimEnd, forKey: .trimEnd)
         try c.encodeIfPresent(trimOffset, forKey: .trimOffset)
+        try c.encodeIfPresent(gradient, forKey: .gradient)
     }
 }
 

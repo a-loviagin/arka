@@ -237,6 +237,43 @@ final class DocumentModel {
         try? store.perform(.setContent(layerId: id, content: .image(ic)), label: "Fit Mode")
     }
 
+    /// Mutate a shape layer's content via one `SetContent` (used for gradient add/edit/remove,
+    /// which the generic property-path system can't address since stops live in an array).
+    func editShape(_ id: EntityID, label: String = "Edit Shape", _ mutate: (inout ShapeContent) -> Void) {
+        guard case .shape(var sc)? = layer(id)?.content else { return }
+        mutate(&sc)
+        try? store.perform(.setContent(layerId: id, content: .shape(sc)), label: label)
+    }
+
+    /// Toggle a default 2-stop linear gradient (across the shape's width) on/off — one ⌘Z.
+    func toggleGradient(_ id: EntityID) {
+        guard case .shape(let sc)? = layer(id)?.content else { return }
+        editShape(id, label: sc.gradient == nil ? "Add Gradient" : "Remove Gradient") { s in
+            if s.gradient != nil { s.gradient = nil; return }
+            let w = s.size.resolve(at: playback.currentTime).x
+            s.gradient = GradientFill(kind: .linear, start: .static(Vec2(0, 0)), end: .static(Vec2(w, 0)),
+                                      stops: [GradientStop(position: .static(0), color: .static(ColorValue(hex: "#5B8CFF")!)),
+                                              GradientStop(position: .static(1), color: .static(ColorValue(hex: "#C44CFF")!))])
+        }
+    }
+
+    /// Set a gradient stop's color (by index) — one ⌘Z.
+    func setGradientStopColor(_ id: EntityID, stop: Int, color: ColorValue) {
+        editShape(id, label: "Gradient Color") { s in
+            guard var g = s.gradient, g.stops.indices.contains(stop) else { return }
+            g.stops[stop].color = .static(color)
+            s.gradient = g
+        }
+    }
+
+    /// Switch a shape's gradient between linear and radial — one ⌘Z.
+    func setGradientKind(_ id: EntityID, _ kind: GradientKind) {
+        editShape(id, label: "Gradient Type") { s in
+            guard var g = s.gradient, g.kind != kind else { return }
+            g.kind = kind; s.gradient = g
+        }
+    }
+
     // MARK: Effects (properties-and-commands.md §1; inspector add/remove)
 
     func addBlur(to layerId: EntityID) {
