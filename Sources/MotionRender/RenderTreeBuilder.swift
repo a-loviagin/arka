@@ -107,9 +107,16 @@ public struct RenderTreeBuilder {
                         meshes.append(fillMesh)
                     }
                     if let sc = shape.strokeColor?.resolve(at: t),
-                       let sw = shape.strokeWidth?.resolve(at: t), sw > 0.01,
-                       let strokeMesh = PathStroker.mesh(p, width: Float(sw), color: SIMD4<Float>(sc)) {
-                        meshes.append(strokeMesh) // drawn above the fill
+                       let sw = shape.strokeWidth?.resolve(at: t), sw > 0.01 {
+                        var trim: PathStroker.Trim?
+                        if shape.trimStart != nil || shape.trimEnd != nil || shape.trimOffset != nil {
+                            trim = PathStroker.Trim(start: shape.trimStart?.resolve(at: t) ?? 0,
+                                                    end: shape.trimEnd?.resolve(at: t) ?? 1,
+                                                    offset: shape.trimOffset?.resolve(at: t) ?? 0)
+                        }
+                        if let strokeMesh = PathStroker.mesh(p, width: Float(sw), color: SIMD4<Float>(sc), trim: trim) {
+                            meshes.append(strokeMesh) // drawn above the fill
+                        }
                     }
                     guard !meshes.isEmpty else { continue }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,

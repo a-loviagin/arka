@@ -755,6 +755,12 @@ struct InspectorView: View {
         if s.geometry == .rect {
             scalarRow("Radius", id, "content/cornerRadius", s.cornerRadius ?? .static(0), sensitivity: 0.5)
         }
+        if s.geometry == .path {
+            // Trim the stroke for line-drawing animations (fractions 0…1 of the path length).
+            scalarRow("Trim Start", id, "content/trimStart", s.trimStart ?? .static(0), format: "%.2f", sensitivity: 0.01)
+            scalarRow("Trim End", id, "content/trimEnd", s.trimEnd ?? .static(1), format: "%.2f", sensitivity: 0.01)
+            scalarRow("Trim Offset", id, "content/trimOffset", s.trimOffset ?? .static(0), format: "%.2f", sensitivity: 0.01)
+        }
     }
 
     @ViewBuilder private func textSection(_ id: EntityID, _ tc: TextContent) -> some View {

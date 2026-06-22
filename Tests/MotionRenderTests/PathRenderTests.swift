@@ -54,7 +54,47 @@ final class PathRenderTests: XCTestCase {
         XCTAssertNil(PathStroker.mesh(line, width: 5, color: SIMD4<Float>(1, 1, 1, 0)), "transparent stroke")
     }
 
+    // MARK: Trim geometry
+
+    func testTrimHalfOfOpenLine() {
+        let pts: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(100, 0)]
+        let pieces = PathStroker.trimmedPolylines(pts, closed: false,
+                                                  trim: .init(start: 0, end: 0.5, offset: 0))
+        XCTAssertEqual(pieces.count, 1)
+        XCTAssertEqual(pieces[0].first!.x, 0, accuracy: 0.01)
+        XCTAssertEqual(pieces[0].last!.x, 50, accuracy: 0.5, "trims to the first half by arc length")
+    }
+
+    func testClosedTrimWrapsSeamIntoTwoPieces() {
+        let square: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(100, 0), SIMD2(100, 100), SIMD2(0, 100)]
+        let pieces = PathStroker.trimmedPolylines(square, closed: true,
+                                                  trim: .init(start: 0, end: 0.5, offset: 0.8))
+        XCTAssertEqual(pieces.count, 2, "span 0.8→1.3 wraps the seam into two open pieces")
+    }
+
     // MARK: Render (needs Metal)
+
+    func testTrimmedStrokeDrawsOnlyTheStartPortion() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let renderer = try MetalRenderer(device: device)
+        let line = PathData(subpaths: [.init(vertices: [
+            .init(point: Vec2(10, 50)), .init(point: Vec2(90, 50)),
+        ], closed: false)])
+        let layer = Layer(id: "p", name: "p", sortKey: "a0",
+                          content: .shape(ShapeContent(geometry: .path, fillColor: nil,
+                                                       strokeColor: .static(ColorValue(r: 1, g: 0, b: 0, a: 1)),
+                                                       strokeWidth: .static(16), path: line,
+                                                       trimEnd: .static(0.5))),
+                          transform: Transform(anchor: .static(Vec2(0, 0)), position: .static(Vec2(0, 0))))
+        let comp = Composition(id: "comp_main", size: Vec2(100, 100), fps: 60, duration: 1,
+                               backgroundColor: .black, layers: [layer])
+        let d = MotionDocument(id: "d", compositions: [comp], mainCompositionId: "comp_main")
+        let nodes = RenderTreeBuilder(document: d).build(compId: "comp_main", at: 0)
+        let img = renderer.renderToImage(nodes: nodes, compSize: SIMD2<Float>(100, 100),
+                                         pixelSize: (100, 100), clear: SIMD4<Double>(0, 0, 0, 1))!
+        XCTAssertGreaterThan(img.pixel(25, 50).r, 200, "first half of the line is drawn")
+        XCTAssertLessThan(img.pixel(80, 50).r, 20, "trimmed-off tail is not drawn")
+    }
 
     func testStrokedOpenPathDrawsAlongTheLineNotBeside() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }

@@ -137,6 +137,12 @@ public struct ShapeContent: Codable, Sendable, Equatable {
     public var cornerRadius: AnimatableValue<Double>?
     /// Vector outline, used when `geometry == .path`. Ignored for rect/ellipse.
     public var path: PathData?
+    /// Stroke trim (properties-and-commands.md §1, Tier 2): line-drawing animation. Fractions 0…1 of
+    /// the path's arc length; `trimEnd` defaults to 1 (whole path) and `trimOffset` rotates the
+    /// visible span (wrapping on closed paths). Applies to the stroke only.
+    public var trimStart: AnimatableValue<Double>?
+    public var trimEnd: AnimatableValue<Double>?
+    public var trimOffset: AnimatableValue<Double>?
 
     public init(geometry: ShapeGeometry,
                 size: AnimatableValue<Vec2> = .static(Vec2(100, 100)),
@@ -144,7 +150,10 @@ public struct ShapeContent: Codable, Sendable, Equatable {
                 strokeColor: AnimatableValue<ColorValue>? = nil,
                 strokeWidth: AnimatableValue<Double>? = nil,
                 cornerRadius: AnimatableValue<Double>? = nil,
-                path: PathData? = nil) {
+                path: PathData? = nil,
+                trimStart: AnimatableValue<Double>? = nil,
+                trimEnd: AnimatableValue<Double>? = nil,
+                trimOffset: AnimatableValue<Double>? = nil) {
         self.geometry = geometry
         self.size = size
         self.fillColor = fillColor
@@ -152,11 +161,15 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         self.strokeWidth = strokeWidth
         self.cornerRadius = cornerRadius
         self.path = path
+        self.trimStart = trimStart
+        self.trimEnd = trimEnd
+        self.trimOffset = trimOffset
     }
 
     // Omitted = default (schema §1): only `geometry` is required; size/fill default, the rest nil.
     private enum CodingKeys: String, CodingKey {
         case geometry, size, fillColor, strokeColor, strokeWidth, cornerRadius, path
+        case trimStart, trimEnd, trimOffset
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -167,6 +180,9 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         strokeWidth = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .strokeWidth)
         cornerRadius = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .cornerRadius)
         path = try c.decodeIfPresent(PathData.self, forKey: .path)
+        trimStart = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .trimStart)
+        trimEnd = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .trimEnd)
+        trimOffset = try c.decodeIfPresent(AnimatableValue<Double>.self, forKey: .trimOffset)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -177,6 +193,9 @@ public struct ShapeContent: Codable, Sendable, Equatable {
         try c.encodeIfPresent(strokeWidth, forKey: .strokeWidth)
         try c.encodeIfPresent(cornerRadius, forKey: .cornerRadius)
         try c.encodeIfPresent(path, forKey: .path)
+        try c.encodeIfPresent(trimStart, forKey: .trimStart)
+        try c.encodeIfPresent(trimEnd, forKey: .trimEnd)
+        try c.encodeIfPresent(trimOffset, forKey: .trimOffset)
     }
 }
 

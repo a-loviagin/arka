@@ -141,6 +141,9 @@ extension Layer {
             case "strokeColor": return .color(s.strokeColor ?? .static(.clear))
             case "strokeWidth": return .scalar(s.strokeWidth ?? .static(0))
             case "cornerRadius": return .scalar(s.cornerRadius ?? .static(0))
+            case "trimStart": return .scalar(s.trimStart ?? .static(0))
+            case "trimEnd": return .scalar(s.trimEnd ?? .static(1))
+            case "trimOffset": return .scalar(s.trimOffset ?? .static(0))
             default: throw CommandError.badPath(rawPath)
             }
         case .text(let t):
@@ -199,6 +202,9 @@ extension Layer {
             case "strokeColor": s.strokeColor = try slot.colorValue(rawPath)
             case "strokeWidth": s.strokeWidth = try slot.scalarValue(rawPath)
             case "cornerRadius": s.cornerRadius = try slot.scalarValue(rawPath)
+            case "trimStart": s.trimStart = try slot.scalarValue(rawPath)
+            case "trimEnd": s.trimEnd = try slot.scalarValue(rawPath)
+            case "trimOffset": s.trimOffset = try slot.scalarValue(rawPath)
             default: throw CommandError.badPath(rawPath)
             }
             content = .shape(s)

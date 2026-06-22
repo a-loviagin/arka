@@ -240,6 +240,23 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
     }
 
+    func testTrimPropertiesAreAddressableAndAnimatable() throws {
+        let pathLayer = Layer(id: "pl", name: "Path", sortKey: "b0",
+                              content: .shape(ShapeContent(geometry: .path, path: PathData(subpaths: []))))
+        var doc = Fixtures.sampleDocument()
+        doc.compositions[0].layers.append(pathLayer)
+        let store = CommandStore(document: doc)
+        // Static write.
+        try store.perform(.setProperty(path: "pl/content/trimEnd", value: .scalar(0.5)), label: "Trim")
+        // Animate via a keyframe at the playhead.
+        try store.perform(.setKeyframe(path: "pl/content/trimEnd",
+                                       keyframe: AnyKeyframe(t: 1.0, v: .scalar(1.0))), label: "Trim KF")
+        guard case .shape(let s) = store.document.composition("comp_main")!.layer("pl")!.content else {
+            return XCTFail("expected shape")
+        }
+        XCTAssertTrue(s.trimEnd?.isAnimated ?? false, "trimEnd became animated")
+    }
+
     func testBoardPositionRoundTripsAndOmitsDefault() throws {
         var c = frame()
         c.boardPosition = Vec2(880, 0)
