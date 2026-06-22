@@ -10,6 +10,21 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 22 — type-aware inspector (done).** A Figma-style "operate the selected layer" panel keyed to
+the layer type, every field reading the resolved value at the playhead and writing one command
+(auto-keyframing, with a keyframe diamond):
+- **Arrange** — align to comp (6 ways), flip H/V, bring-to-front / send-to-back.
+- **Transform** — position, rotation, scale, opacity, **blend mode** (normal/multiply/screen/add/
+  lighten — real backdrop-reading composites in linear space).
+- **Shape** — W/H size, fill & stroke color wells, stroke width, corner radius.
+- **Text** — editable string / font / alignment, size, tracking, **line height** (multi-line),
+  fill.
+- **Effects** — add/tweak/remove blur & shadow.
+- Layer **rename**, image **fit mode**.
+New kernel commands: `SetLayerName`, `SetContent`, `SetLayerBlendMode`; generic auto-keyframing
+property bindings; `Layer.blendMode` + `TextContent.lineHeight`. 136 tests. (Deferred: background
+blur — needs a backdrop-sampling render pass.)
+
 **Phase 21 — correctness & the product promise (done).** Linear-space color compositing
 (sRGB-format render targets, so blends/blur/crossfades happen in linear — no dark AA fringing;
 white@50% over black is now the correct sRGB 188, not gamma 128). The **preview/export equivalence
