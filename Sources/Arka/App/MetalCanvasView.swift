@@ -22,6 +22,7 @@ final class CanvasNSView: NSView {
         wantsLayer = true
         metalLayer.device = model.device
         metalLayer.pixelFormat = .bgra8Unorm_srgb // linear-space compositing (render-engine.md §4)
+        metalLayer.framebufferOnly = false // background blur reads the drawable back as a texture
         metalLayer.framebufferOnly = true
         metalLayer.isOpaque = true
     }

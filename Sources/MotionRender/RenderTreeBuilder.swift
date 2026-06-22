@@ -162,6 +162,9 @@ public struct RenderTreeBuilder {
                 let op = scalar(fx, "opacity", at: t) ?? 0.5
                 return .shadow(offset: SIMD2<Float>(Float(off.x), Float(off.y)),
                                radius: Float(r), color: SIMD4<Float>(c), opacity: Float(op))
+            case "backgroundBlur":
+                let r = scalar(fx, "radius", at: t) ?? 8
+                return r > 0.01 ? .backgroundBlur(radius: Float(r)) : nil
             default:
                 return nil // unknown effect types are skipped (forward-compatible)
             }

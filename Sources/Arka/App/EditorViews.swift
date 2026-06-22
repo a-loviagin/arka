@@ -568,6 +568,7 @@ struct InspectorView: View {
         HStack(spacing: 6) {
             Button("+ Blur") { model.addBlur(to: layer.id) }.controlSize(.small)
             Button("+ Shadow") { model.addShadow(to: layer.id) }.controlSize(.small)
+            Button("+ BG Blur") { model.addBackgroundBlur(to: layer.id) }.controlSize(.small)
             Spacer()
         }
     }
@@ -582,7 +583,7 @@ struct InspectorView: View {
             }
             let base = "effects/\(fx.id)/params"
             switch fx.type {
-            case "blur":
+            case "blur", "backgroundBlur":
                 if case .scalar(let r)? = fx.params["radius"] { scalarRow("Radius", id, "\(base)/radius", r, sensitivity: 0.5) }
             case "shadow":
                 if case .scalar(let r)? = fx.params["radius"] { scalarRow("Radius", id, "\(base)/radius", r, sensitivity: 0.5) }

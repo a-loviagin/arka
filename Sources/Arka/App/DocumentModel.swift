@@ -246,6 +246,11 @@ final class DocumentModel {
         try? store.perform(.addEffect(layerId: layerId, effect: fx), label: "Add Shadow")
     }
 
+    func addBackgroundBlur(to layerId: EntityID) {
+        let fx = Effect(id: ids.next("fx"), type: "backgroundBlur", params: ["radius": .scalar(.static(12))])
+        try? store.perform(.addEffect(layerId: layerId, effect: fx), label: "Add Background Blur")
+    }
+
     func removeEffect(_ layerId: EntityID, _ effectId: EntityID) {
         try? store.perform(.removeEffect(layerId: layerId, effectId: effectId), label: "Remove Effect")
     }

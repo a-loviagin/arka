@@ -236,6 +236,17 @@ enum ShaderSource {
         }
         return c * p.opacity;
     }
+
+    // Background blur: show the blurred backdrop only where the layer covers (mask = layer alpha),
+    // composited "over" the sharp backdrop. The layer's own content is then drawn on top separately.
+    fragment float4 backdrop_fragment(FSOut in [[stage_in]],
+                                      texture2d<float> blurred [[texture(0)]],
+                                      texture2d<float> mask [[texture(1)]],
+                                      sampler samp [[sampler(0)]]) {
+        float4 b = blurred.sample(samp, in.uv); // premultiplied blurred backdrop
+        float m = mask.sample(samp, in.uv).a;   // layer coverage
+        return b * m;
+    }
     """
 }
 #endif

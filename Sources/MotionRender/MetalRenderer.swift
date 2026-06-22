@@ -52,6 +52,8 @@ public final class MetalRenderer {
     private let compositePipeline: MTLRenderPipelineState
     /// Composite pipelines for non-normal blend modes (same shader, different fixed-function blend).
     private let blendPipelines: [BlendMode: MTLRenderPipelineState]
+    /// Masked composite of a blurred backdrop (background blur).
+    private let backdropPipeline: MTLRenderPipelineState
     private let sampler: MTLSamplerState
     private let pool: IntermediatePool
 
@@ -125,6 +127,7 @@ public final class MetalRenderer {
             .add: try blendComposite(.one, .one, .add),
             .lighten: try blendComposite(.one, .one, .max),
         ]
+        self.backdropPipeline = try pipeline("fullscreen_vertex", "backdrop_fragment")
 
         let sdesc = MTLSamplerDescriptor()
         sdesc.minFilter = .linear
@@ -155,6 +158,9 @@ public final class MetalRenderer {
         case glyphs(base: Int, count: Int, texture: MTLTexture)
         case image(base: Int, texture: MTLTexture)
         case composite(CompositeOp)
+        /// Background blur: snapshot the target so far, blur it, composite masked by `content`'s
+        /// coverage, then draw `content` on top. Segments the encoder (needs the backdrop as input).
+        case backdrop(content: MTLTexture, radius: Float, opacity: Float)
     }
 
     /// Draw a RenderTree into a drawable (the live preview path). `clear` is sRGB-encoded rgba.
@@ -267,10 +273,15 @@ public final class MetalRenderer {
 
         // Phase 1: anything needing an intermediate (effected items, groups) → composite ops.
         var composites: [Int: [CompositeOp]] = [:]
+        var backdrops: [Int: (content: MTLTexture, radius: Float, opacity: Float)] = [:]
         for (i, node) in nodes.enumerated() {
             switch node {
             case .item(let item) where !item.effects.isEmpty || item.blendMode != .normal:
-                if let content = renderContent(item, proj: proj, w: w, h: h, cmd: cmd, transient: &transient) {
+                guard let content = renderContent(item, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
+                else { break }
+                if let radius = backgroundBlurRadius(item.effects) {
+                    backdrops[i] = (content, radius, item.opacity)
+                } else {
                     composites[i] = effectComposites(content: content, opacity: item.opacity,
                                                      effects: item.effects, blend: item.blendMode,
                                                      proj: proj, w: w, h: h, cmd: cmd)
@@ -297,6 +308,11 @@ public final class MetalRenderer {
             if let cops = composites[i] {
                 flushShapes()
                 for c in cops { ops.append(.composite(c)) }
+                continue
+            }
+            if let bd = backdrops[i] {
+                flushShapes()
+                ops.append(.backdrop(content: bd.content, radius: bd.radius, opacity: bd.opacity))
                 continue
             }
             guard case .item(let item) = node else { continue }
@@ -332,7 +348,8 @@ public final class MetalRenderer {
         let shapeBuf = makeBuffer(shapes); if let b = shapeBuf { transient.append(b) }
         let glyphBuf = makeBuffer(glyphs); if let b = glyphBuf { transient.append(b) }
 
-        guard let enc = cmd.makeRenderCommandEncoder(descriptor: clearedPass(target, clear)) else { return }
+        guard let firstEnc = cmd.makeRenderCommandEncoder(descriptor: clearedPass(target, clear)) else { return }
+        var enc = firstEnc // reassigned around backdrop ops, which must read the target mid-pass
         for op in ops {
             switch op {
             case .shapes(let base, let count):
@@ -345,9 +362,61 @@ public final class MetalRenderer {
                 if let buf = glyphBuf { drawTextured(enc, imagePipeline, buf, base: base, count: 1, texture: texture) }
             case .composite(let c):
                 drawComposite(enc, c)
+            case .backdrop(let content, let radius, let opacity):
+                // End the current pass so the target holds the backdrop, snapshot + blur it, then
+                // composite the blur masked by the layer, and draw the layer content on top.
+                enc.endEncoding()
+                guard let snapshot = pool.acquire(width: w, height: h),
+                      let next = encodeBackdropBlur(content: content, radius: radius, opacity: opacity,
+                                                    target: target, snapshot: snapshot, w: w, h: h, cmd: cmd)
+                else {
+                    guard let resume = cmd.makeRenderCommandEncoder(descriptor: loadedPass(target)) else { return }
+                    enc = resume; continue
+                }
+                enc = next
             }
         }
         enc.endEncoding()
+    }
+
+    /// Background-blur pass: blit the target into `snapshot`, blur it, then on a fresh load-encoder
+    /// composite the blurred backdrop masked by `content`'s coverage and draw `content` over it.
+    /// Returns the open encoder for the caller to continue drawing into.
+    private func encodeBackdropBlur(content: MTLTexture, radius: Float, opacity: Float,
+                                    target: MTLTexture, snapshot: MTLTexture, w: Int, h: Int,
+                                    cmd: MTLCommandBuffer) -> MTLRenderCommandEncoder? {
+        if let blit = cmd.makeBlitCommandEncoder() {
+            blit.copy(from: target, sourceSlice: 0, sourceLevel: 0,
+                      sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0), sourceSize: MTLSize(width: w, height: h, depth: 1),
+                      to: snapshot, destinationSlice: 0, destinationLevel: 0,
+                      destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0))
+            blit.endEncoding()
+        }
+        let blurred = blur(snapshot, radius: radius, w: w, h: h, cmd: cmd)
+        guard let enc = cmd.makeRenderCommandEncoder(descriptor: loadedPass(target)) else { return nil }
+        // Masked blurred backdrop (over the sharp backdrop).
+        enc.setRenderPipelineState(backdropPipeline)
+        enc.setFragmentTexture(blurred, index: 0)
+        enc.setFragmentTexture(content, index: 1)
+        enc.setFragmentSamplerState(sampler, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        // The layer's own content on top.
+        drawComposite(enc, CompositeOp(texture: content, offsetNDC: .zero, tint: SIMD4<Float>(1, 1, 1, 1),
+                                       opacity: opacity, mode: 0))
+        return enc
+    }
+
+    private func backgroundBlurRadius(_ effects: [ResolvedEffect]) -> Float? {
+        for e in effects { if case .backgroundBlur(let r) = e { return r } }
+        return nil
+    }
+
+    private func loadedPass(_ target: MTLTexture) -> MTLRenderPassDescriptor {
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .load
+        pass.colorAttachments[0].storeAction = .store
+        return pass
     }
 
     // MARK: Effect pre-passes

@@ -54,6 +54,8 @@ public struct RenderItem {
 enum ResolvedEffect {
     case blur(radius: Float)
     case shadow(offset: SIMD2<Float>, radius: Float, color: SIMD4<Float>, opacity: Float)
+    /// Blur the composited backdrop behind the layer, masked by the layer's coverage (frosted glass).
+    case backgroundBlur(radius: Float)
 }
 
 /// What a RenderItem draws. SDF shapes and textured runs (glyphs now, images next) share the
