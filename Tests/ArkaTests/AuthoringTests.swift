@@ -51,6 +51,52 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(copy.transform.position.resolve(at: 0), Vec2(120, 120), "static position offset by 20")
     }
 
+    func testGroupReparentsSelectionUnderNewGroup() throws {
+        let m = freshModel()
+        let a = try XCTUnwrap(m.createLayer(.rect, at: Vec2(10, 10)))
+        let b = try XCTUnwrap(m.createLayer(.ellipse, at: Vec2(20, 20)))
+        m.selection = [a, b]
+        let before = m.mainComp!.layers.count
+        m.groupSelection()
+        XCTAssertEqual(m.mainComp!.layers.count, before + 1, "one new group layer")
+        let groupId = try XCTUnwrap(m.selection.first)
+        XCTAssertEqual(m.selection, [groupId])
+        if case .group = try XCTUnwrap(m.layer(groupId)).content {} else { XCTFail("group content") }
+        XCTAssertEqual(m.layer(a)?.parentId, groupId)
+        XCTAssertEqual(m.layer(b)?.parentId, groupId)
+        m.store.undo() // one step reverts the whole grouping
+        XCTAssertEqual(m.mainComp!.layers.count, before)
+        XCTAssertNil(m.layer(a)?.parentId)
+    }
+
+    func testUngroupFreesChildrenAndRemovesGroup() throws {
+        let m = freshModel()
+        let a = try XCTUnwrap(m.createLayer(.rect, at: Vec2(10, 10)))
+        m.selection = [a]
+        m.groupSelection()
+        let groupId = try XCTUnwrap(m.selection.first)
+        m.ungroupSelection()
+        XCTAssertNil(m.layer(groupId), "group removed")
+        XCTAssertNotNil(m.layer(a), "child survives")
+        XCTAssertNil(m.layer(a)?.parentId, "child reparented to the group's parent (root)")
+        XCTAssertEqual(m.selection, [a])
+    }
+
+    func testDrawToSizeSetsRectSizeAndPositionInOneStep() throws {
+        let m = freshModel()
+        let undosBefore = m.mainComp!.layers.count
+        let created = try XCTUnwrap(m.beginCreateLayer(.rect, at: Vec2(100, 100)))
+        m.updateCreateRect(created.id, from: Vec2(100, 100), to: Vec2(300, 260), within: created.txn)
+        m.store.commit(created.txn)
+        let layer = try XCTUnwrap(m.layer(created.id))
+        if case .shape(let s) = layer.content {
+            XCTAssertEqual(s.size.resolve(at: 0), Vec2(200, 160))
+        } else { XCTFail("expected shape") }
+        XCTAssertEqual(layer.transform.position.resolve(at: 0), Vec2(200, 180))
+        m.store.undo() // create + resize is one undo step
+        XCTAssertEqual(m.mainComp!.layers.count, undosBefore)
+    }
+
     func testDeleteSelectedLayersIsOneUndoStep() throws {
         let m = freshModel()
         let a = try XCTUnwrap(m.createLayer(.rect, at: Vec2(10, 10)))

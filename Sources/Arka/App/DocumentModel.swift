@@ -255,11 +255,8 @@ final class DocumentModel {
         SortKey.between(mainComp?.layers.map(\.sortKey).max(), nil)
     }
 
-    /// Create a layer of `kind` centered at `compPoint`, on top and selected — one ⌘Z.
-    @discardableResult
-    func createLayer(_ kind: NewLayerKind, at compPoint: Vec2) -> EntityID? {
-        guard let comp = mainComp else { return nil }
-        let id = ids.next("layer")
+    /// Build (but don't apply) a default layer of `kind`, anchored centre, at `compPoint`.
+    private func makeLayer(_ kind: NewLayerKind, at compPoint: Vec2) -> Layer {
         let content: LayerContent
         let name: String
         switch kind {
@@ -276,12 +273,73 @@ final class DocumentModel {
                                         fillColor: .static(.white), alignment: .center))
             name = "Text"
         }
-        let layer = Layer(id: id, name: name, sortKey: topSortKey(), content: content,
-                          transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(compPoint)))
-        guard (try? store.perform(.addLayer(layer: layer, compId: comp.id), label: "Add \(name)")) != nil
+        return Layer(id: ids.next("layer"), name: name, sortKey: topSortKey(), content: content,
+                     transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(compPoint)))
+    }
+
+    /// Create a layer of `kind` centered at `compPoint`, on top and selected — one ⌘Z.
+    @discardableResult
+    func createLayer(_ kind: NewLayerKind, at compPoint: Vec2) -> EntityID? {
+        guard let comp = mainComp else { return nil }
+        let layer = makeLayer(kind, at: compPoint)
+        guard (try? store.perform(.addLayer(layer: layer, compId: comp.id), label: "Add \(layer.name)")) != nil
         else { return nil }
-        selection = [id]
-        return id
+        selection = [layer.id]
+        return layer.id
+    }
+
+    /// Begin a draw-to-size creation: add a default-sized layer inside a new transaction; the canvas
+    /// updates size/position during the drag (`updateCreateRect`) and commits on mouse-up — one ⌘Z.
+    func beginCreateLayer(_ kind: NewLayerKind, at compPoint: Vec2) -> (id: EntityID, txn: TransactionID)? {
+        guard let comp = mainComp else { return nil }
+        let layer = makeLayer(kind, at: compPoint)
+        let txn = store.begin("Add \(layer.name)")
+        do { try store.perform(.addLayer(layer: layer, compId: comp.id), in: txn) }
+        catch { store.cancel(txn); return nil }
+        selection = [layer.id]
+        return (layer.id, txn)
+    }
+
+    /// Size a shape being drawn to span `from`→`to` (centre-anchored): size = |to−from|, centred at
+    /// the midpoint. No-op below a tiny threshold so a plain click keeps the default size.
+    func updateCreateRect(_ id: EntityID, from: Vec2, to: Vec2, within txn: TransactionID) {
+        let size = Vec2(max(abs(to.x - from.x), 1), max(abs(to.y - from.y), 1))
+        let mid = Vec2((from.x + to.x) / 2, (from.y + to.y) / 2)
+        try? store.perform(.setProperty(path: "\(id)/content/size", value: .vec2(size)), in: txn)
+        try? store.perform(.setProperty(path: "\(id)/transform/position", value: .vec2(mid)), in: txn)
+    }
+
+    private func isContainer(_ layer: Layer) -> Bool {
+        if case .group = layer.content { return true }
+        if case .null = layer.content { return true }
+        return false
+    }
+
+    /// Wrap the selected layers under a new identity-transform group (so children keep their world
+    /// positions) and select it — one ⌘Z.
+    func groupSelection() {
+        guard let comp = mainComp else { return }
+        let members = comp.layers.filter { selection.contains($0.id) }.sorted { $0.sortKey < $1.sortKey }
+        guard !members.isEmpty else { return }
+        let group = Layer(id: ids.next("group"), name: "Group", sortKey: topSortKey(), content: .group,
+                          transform: Transform(anchor: .static(.zero), position: .static(.zero)))
+        var cmds: [AnyCommand] = [.addLayer(layer: group, compId: comp.id)]
+        cmds += members.map { .setLayerParent(layerId: $0.id, parentId: group.id) }
+        try? store.perform(.batch(commands: cmds, label: "Group"), label: "Group")
+        selection = [group.id]
+    }
+
+    /// Remove the selected group/null containers; the kernel re-parents their children to the group's
+    /// parent (identity transform → positions preserved). Selects the freed children — one ⌘Z.
+    func ungroupSelection() {
+        guard let comp = mainComp else { return }
+        let groups = comp.layers.filter { selection.contains($0.id) && isContainer($0) }
+        guard !groups.isEmpty else { return }
+        let groupIds = Set(groups.map(\.id))
+        let freed = Set(comp.layers.filter { groupIds.contains($0.parentId ?? "") }.map(\.id))
+        try? store.perform(.batch(commands: groups.map { .removeLayer(layerId: $0.id) }, label: "Ungroup"),
+                           label: "Ungroup")
+        selection = freed
     }
 
     /// Menu convenience: create at the composition center.

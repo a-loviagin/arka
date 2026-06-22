@@ -23,10 +23,11 @@ private struct GizmoGeo {
 struct CanvasArea: View {
     let model: DocumentModel
 
-    private enum Mode { case none, move, scale, rotate, anchor, marquee }
+    private enum Mode { case none, move, scale, rotate, anchor, marquee, create }
     @State private var began = false
     @State private var mode: Mode = .none
     @State private var txn: TransactionID?
+    @State private var createId: EntityID?
     @State private var pivot: Vec2 = .zero
     @State private var startComp: Vec2 = .zero
     @State private var startScale: Vec2 = .one
@@ -139,14 +140,16 @@ struct CanvasArea: View {
                 case .rotate: dragRotate(cur)
                 case .anchor: dragAnchor(cur)
                 case .marquee: marqueeCurrent = CGPoint(x: value.location.x, y: value.location.y)
+                case .create: dragCreate(cur)
                 case .none: break
                 }
             }
             .onEnded { _ in
                 if mode == .marquee { finishMarquee(viewport) }
+                if mode == .create { model.tool = .select }
                 if let txn { model.store.commit(txn) }
                 txn = nil; mode = .none; began = false; snapGuides = []
-                marqueeStart = nil; marqueeCurrent = nil
+                marqueeStart = nil; marqueeCurrent = nil; createId = nil
             }
     }
 
@@ -156,11 +159,17 @@ struct CanvasArea: View {
         let pressComp = viewport.toComp(Vec2(sp.x, sp.y))
         let t = model.playback.currentTime
 
-        // Creation tools: click to place a layer at the press point, then revert to select.
+        // Creation tools: text places at the click; rect/ellipse draw-to-size (default size on a
+        // plain click). Tool reverts to select on mouse-up.
         switch model.tool {
-        case .rect: model.createLayer(.rect, at: pressComp); model.tool = .select; mode = .none; return
-        case .ellipse: model.createLayer(.ellipse, at: pressComp); model.tool = .select; mode = .none; return
-        case .text: model.createLayer(.text, at: pressComp); model.tool = .select; mode = .none; return
+        case .text:
+            model.createLayer(.text, at: pressComp); model.tool = .select; mode = .none; return
+        case .rect, .ellipse:
+            let kind: DocumentModel.NewLayerKind = model.tool == .rect ? .rect : .ellipse
+            if let created = model.beginCreateLayer(kind, at: pressComp) {
+                createId = created.id; txn = created.txn; startComp = pressComp; mode = .create
+            } else { mode = .none }
+            return
         case .select, .anchor: break
         }
 
@@ -250,6 +259,15 @@ struct CanvasArea: View {
         guard let txn, let sel = model.selection.first else { return }
         let delta = (angle(cur - pivot) - startAngle) * 180 / .pi
         model.setRotation(sel, to: startRotation + delta, within: txn)
+    }
+
+    /// Draw-to-size: while dragging a freshly-created rect/ellipse, span press→cursor. Below a tiny
+    /// threshold the layer keeps its default size (a plain click).
+    private func dragCreate(_ cur: Vec2) {
+        guard let txn, let id = createId else { return }
+        if (cur - startComp).length > 4 {
+            model.updateCreateRect(id, from: startComp, to: cur, within: txn)
+        }
     }
 
     private func dragAnchor(_ cur: Vec2) {

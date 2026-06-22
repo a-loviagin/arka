@@ -122,6 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func insertEllipse(_ sender: Any?) { model.createLayerAtCenter(.ellipse) }
     @objc func insertText(_ sender: Any?) { model.createLayerAtCenter(.text) }
     @objc func duplicateSelection(_ sender: Any?) { model.duplicateSelectedLayers() }
+    @objc func groupSelection(_ sender: Any?) { model.groupSelection() }
+    @objc func ungroupSelection(_ sender: Any?) { model.ungroupSelection() }
 
     /// ⌫ is context-aware: delete the selected keyframe if one is picked, else the selected layer(s).
     @objc func deleteSelection(_ sender: Any?) {
@@ -189,6 +191,14 @@ func buildMainMenu(target: AppDelegate) {
                          action: #selector(AppDelegate.duplicateSelection(_:)), keyEquivalent: "d")
     dup.target = target
     editMenu.addItem(dup)
+    let group = NSMenuItem(title: "Group",
+                           action: #selector(AppDelegate.groupSelection(_:)), keyEquivalent: "g")
+    group.target = target
+    editMenu.addItem(group)
+    let ungroup = NSMenuItem(title: "Ungroup",
+                             action: #selector(AppDelegate.ungroupSelection(_:)), keyEquivalent: "G")
+    ungroup.target = target
+    editMenu.addItem(ungroup)
     let del = NSMenuItem(title: "Delete",
                          action: #selector(AppDelegate.deleteSelection(_:)),
                          keyEquivalent: "\u{8}") // ⌫
