@@ -147,6 +147,7 @@ extension Layer {
             switch prop {
             case "fontSize": return .scalar(t.fontSize)
             case "tracking": return .scalar(t.tracking ?? .static(0))
+            case "lineHeight": return .scalar(t.lineHeight ?? .static(0))
             case "fillColor": return .color(t.fillColor)
             default: throw CommandError.badPath(rawPath)
             }
@@ -205,6 +206,7 @@ extension Layer {
             switch prop {
             case "fontSize": t.fontSize = try slot.scalarValue(rawPath)
             case "tracking": t.tracking = try slot.scalarValue(rawPath)
+            case "lineHeight": t.lineHeight = try slot.scalarValue(rawPath)
             case "fillColor": t.fillColor = try slot.colorValue(rawPath)
             default: throw CommandError.badPath(rawPath)
             }

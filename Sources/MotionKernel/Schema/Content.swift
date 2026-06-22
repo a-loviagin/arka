@@ -193,19 +193,24 @@ public struct TextContent: Codable, Sendable, Equatable {
     public var tracking: AnimatableValue<Double>?
     public var fillColor: AnimatableValue<ColorValue>
     public var alignment: TextAlignment
+    /// Line advance in points for multi-line text (the string may contain "\n"). nil / ≤ 0 means the
+    /// font's natural line height (ascent + descent + leading).
+    public var lineHeight: AnimatableValue<Double>?
 
     public init(string: String,
                 fontFamily: String = "Helvetica",
                 fontSize: AnimatableValue<Double> = .static(48),
                 tracking: AnimatableValue<Double>? = nil,
                 fillColor: AnimatableValue<ColorValue> = .static(.black),
-                alignment: TextAlignment = .left) {
+                alignment: TextAlignment = .left,
+                lineHeight: AnimatableValue<Double>? = nil) {
         self.string = string
         self.fontFamily = fontFamily
         self.fontSize = fontSize
         self.tracking = tracking
         self.fillColor = fillColor
         self.alignment = alignment
+        self.lineHeight = lineHeight
     }
 }
 

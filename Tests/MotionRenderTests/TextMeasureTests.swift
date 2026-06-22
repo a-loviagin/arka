@@ -17,6 +17,21 @@ final class TextMeasureTests: XCTestCase {
         return MotionDocument(id: "d", compositions: [comp], mainCompositionId: "c")
     }
 
+    func testMultiLineAndLineHeightMeasure() throws {
+        guard let device = MTLCreateSystemDefaultDevice(), let engine = TextEngine(device: device) else {
+            throw XCTSkip("No Metal device / text engine")
+        }
+        let one = TextContent(string: "A", fontFamily: "Helvetica", fontSize: .static(40))
+        let two = TextContent(string: "A\nB", fontFamily: "Helvetica", fontSize: .static(40))
+        let h1 = engine.measure(one, at: 0).y
+        let h2 = engine.measure(two, at: 0).y
+        XCTAssertGreaterThan(h2, h1 * 1.5, "two lines are much taller than one")
+
+        let tall = TextContent(string: "A\nB", fontFamily: "Helvetica", fontSize: .static(40),
+                               lineHeight: .static(100))
+        XCTAssertGreaterThan(engine.measure(tall, at: 0).y, h2, "explicit line height increases height")
+    }
+
     func testMeasurerGivesTextSizeAndHitTest() throws {
         guard let device = MTLCreateSystemDefaultDevice(), let engine = TextEngine(device: device) else {
             throw XCTSkip("No Metal device / text engine")

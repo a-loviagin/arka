@@ -548,6 +548,7 @@ struct InspectorView: View {
         TextContentEditor(model: model, id: id, content: tc).id(id)
         scalarRow("Size", id, "content/fontSize", tc.fontSize, sensitivity: 0.5)
         scalarRow("Tracking", id, "content/tracking", tc.tracking ?? .static(0), format: "%.1f", sensitivity: 0.2)
+        scalarRow("Line", id, "content/lineHeight", tc.lineHeight ?? .static(0), sensitivity: 0.5) // 0 = auto
         colorRow("Fill", id, "content/fillColor", tc.fillColor, defaultColor: .white)
     }
 

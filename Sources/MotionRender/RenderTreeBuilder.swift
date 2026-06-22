@@ -88,9 +88,10 @@ public struct RenderTreeBuilder {
                 guard let engine = textEngine else { continue }
                 let fontSize = text.fontSize.resolve(at: t)
                 let tracking = text.tracking?.resolve(at: t) ?? 0
+                let lineHeight = text.lineHeight?.resolve(at: t) ?? 0
                 let fill = SIMD4<Float>(text.fillColor.resolve(at: t))
-                guard let run = engine.run(for: text, fontSize: fontSize,
-                                           tracking: tracking, fill: fill) else { continue }
+                guard let run = engine.run(for: text, fontSize: fontSize, tracking: tracking,
+                                           lineHeight: lineHeight, fill: fill) else { continue }
                 nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                               content: .glyphRun(run), effects: effects, blendMode: layer.blendMode)))
             case .image(let image):
