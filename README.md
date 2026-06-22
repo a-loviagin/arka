@@ -19,8 +19,14 @@ editable vocabulary, and an eval harness gates every prompt/example change. Beca
   (validity — runs the real validate/repair pipeline) and layer 2 (structural — `producesAnimation`,
   `minLayers`, `layerAnimated`, `keyframesInRange`, …). Foundation-only, runs offline against the
   deterministic `HeuristicGenerator` baseline in CI; pass any `MotionGenerator` to eval a live model.
-- Next: an exemplar library + retrieval + few-shot injection; then asset analysis + canvas-snapshot
-  grounding. 186 tests.
+- **Slice 2 (done)** — the **example-learning mechanism**: an `ExemplarLibrary` of authored
+  `(intent + tags → command-list)` pairs, retrieved per request by keyword/tag overlap and injected
+  as **few-shot exemplars** in the system prompt (`AnthropicClient` retrieves top-K and builds
+  `SystemPrompt.text(exemplars:)`). This is how the tool learns from examples *without fine-tuning* —
+  exemplars are data the model reads, and the command-list output keeps generated projects fully
+  editable. New examples are added by authoring an exemplar (or mining accepted generations); the
+  keyword retriever can be swapped for embeddings behind the same interface.
+- Next: asset analysis + canvas-snapshot grounding (vision). 192 tests.
 
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence

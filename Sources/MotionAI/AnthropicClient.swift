@@ -18,17 +18,24 @@ public struct AnthropicClient: MotionGenerator {
         public var maxTokens: Int
         public var endpoint: URL
         public var anthropicVersion: String
+        /// Few-shot exemplar library + how many to retrieve per request (ai-pipeline.md §6.4).
+        public var exemplars: ExemplarLibrary
+        public var exemplarCount: Int
 
         public init(apiKey: String,
                     model: String = "claude-sonnet-4-6",
                     maxTokens: Int = 4096,
                     endpoint: URL = URL(string: "https://api.anthropic.com/v1/messages")!,
-                    anthropicVersion: String = "2023-06-01") {
+                    anthropicVersion: String = "2023-06-01",
+                    exemplars: ExemplarLibrary = .builtin,
+                    exemplarCount: Int = 4) {
             self.apiKey = apiKey
             self.model = model
             self.maxTokens = maxTokens
             self.endpoint = endpoint
             self.anthropicVersion = anthropicVersion
+            self.exemplars = exemplars
+            self.exemplarCount = exemplarCount
         }
     }
 
@@ -66,10 +73,11 @@ public struct AnthropicClient: MotionGenerator {
 
     /// The wire body: system prompt (cacheable prefix), the single user turn, and the forced tool.
     func requestBody(for request: GenerationRequest) -> [String: Any] {
-        [
+        let exemplars = config.exemplars.retrieve(for: request.prompt, k: config.exemplarCount)
+        return [
             "model": config.model,
             "max_tokens": config.maxTokens,
-            "system": SystemPrompt.text(),
+            "system": SystemPrompt.text(exemplars: exemplars),
             "tool_choice": ["type": "tool", "name": Self.toolName],
             "tools": [Self.toolDefinition()],
             "messages": [
