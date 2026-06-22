@@ -735,6 +735,26 @@ final class DocumentModel {
         return nil
     }
 
+    // MARK: Frame manipulation on the board (move / resize / rename)
+
+    /// Move a frame on the board (live drag → use one transaction; commit on mouse-up = one ⌘Z).
+    func setFramePosition(_ id: EntityID, to pos: Vec2, within txn: TransactionID) {
+        try? store.perform(.setCompositionSetting(compId: id, setting: .boardPosition(pos)), in: txn)
+    }
+
+    /// Resize a frame (its composition). Layers keep their absolute positions, Figma-style.
+    func setFrameSize(_ id: EntityID, to size: Vec2, within txn: TransactionID) {
+        let clamped = Vec2(max(size.x, 16), max(size.y, 16))
+        try? store.perform(.setCompositionSetting(compId: id, setting: .size(clamped)), in: txn)
+    }
+
+    /// Rename a frame — one ⌘Z. No-op on an empty or unchanged name.
+    func renameFrame(_ id: EntityID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, document.composition(id)?.name != trimmed else { return }
+        try? store.perform(.setCompositionSetting(compId: id, setting: .name(trimmed)), label: "Rename Frame")
+    }
+
     // MARK: Autosave / crash recovery (undo-system.md §8)
 
     /// Where the live document is autosaved between commits. Present on launch ⇒ the last session

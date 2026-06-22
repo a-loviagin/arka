@@ -10,6 +10,7 @@ import MotionKernel
 /// new neighbors. The bottom bar adds a frame.
 struct LayerListView: View {
     let model: DocumentModel
+    @State private var renamingFrame: EntityID?
 
     private func layersTopFirst(_ comp: Composition) -> [Layer] {
         comp.layersInRenderOrder.reversed()
@@ -63,10 +64,16 @@ struct LayerListView: View {
         let isActive = frame.id == model.activeCompId
         return HStack(spacing: 6) {
             Image(systemName: "rectangle.on.rectangle").font(.system(size: 10))
-            Text(frame.name.isEmpty ? "Frame" : frame.name)
-                .font(.system(size: 11, weight: isActive ? .semibold : .regular))
-            Text("\(Int(frame.size.x))×\(Int(frame.size.y))")
-                .font(.system(size: 9)).foregroundStyle(.tertiary)
+            if renamingFrame == frame.id {
+                FrameNameField(initial: frame.name) { newName in
+                    model.renameFrame(frame.id, to: newName); renamingFrame = nil
+                } onCancel: { renamingFrame = nil }
+            } else {
+                Text(frame.name.isEmpty ? "Frame" : frame.name)
+                    .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                Text("\(Int(frame.size.x))×\(Int(frame.size.y))")
+                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+            }
             Spacer()
             if frame.id != model.document.mainCompositionId {
                 Button {
@@ -79,6 +86,7 @@ struct LayerListView: View {
         }
         .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
         .contentShape(Rectangle())
+        .onTapGesture(count: 2) { model.setActiveFrame(frame.id); renamingFrame = frame.id }
         .onTapGesture { model.setActiveFrame(frame.id) }
     }
 

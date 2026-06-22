@@ -223,6 +223,23 @@ final class CommandTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
     }
 
+    func testSetCompositionBoardPositionAppliesAndUndoes() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.setCompositionSetting(compId: "comp_main", setting: .boardPosition(Vec2(120, 40))),
+                          label: "Move Frame")
+        XCTAssertEqual(store.document.composition("comp_main")?.boardPosition, Vec2(120, 40))
+        store.undo()
+        XCTAssertEqual(store.document.composition("comp_main")?.boardPosition, .zero)
+    }
+
+    func testCompositionSettingRoundTripsBoardPosition() throws {
+        let cmds: [AnyCommand] = [.setCompositionSetting(compId: "c", setting: .boardPosition(Vec2(900, 0))),
+                                  .setCompositionSetting(compId: "c", setting: .size(Vec2(640, 480))),
+                                  .setCompositionSetting(compId: "c", setting: .name("Hero"))]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     func testBoardPositionRoundTripsAndOmitsDefault() throws {
         var c = frame()
         c.boardPosition = Vec2(880, 0)

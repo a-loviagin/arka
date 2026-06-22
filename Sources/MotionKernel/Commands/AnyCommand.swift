@@ -52,6 +52,7 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case size(Vec2)
         case backgroundColor(ColorValue)
         case name(String)
+        case boardPosition(Vec2)
     }
 
     // MARK: Validate
@@ -213,6 +214,7 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
             case .size(let s): doc.compositions[ci].size = s
             case .backgroundColor(let c): doc.compositions[ci].backgroundColor = c
             case .name(let n): doc.compositions[ci].name = n
+            case .boardPosition(let p): doc.compositions[ci].boardPosition = p
             }
         case .applyPattern(let layerId, let pattern, let params):
             let (ci, li) = try locateLayer(layerId, in: doc)

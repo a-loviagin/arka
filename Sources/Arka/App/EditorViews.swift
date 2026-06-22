@@ -23,9 +23,18 @@ private struct GizmoGeo {
 struct CanvasArea: View {
     let model: DocumentModel
 
-    private enum Mode { case none, move, scale, rotate, anchor, marquee, create, pan }
+    private enum Mode { case none, move, scale, rotate, anchor, marquee, create, pan, frameMove, frameResize }
     @State private var panAccum: CGSize = .zero
     @State private var magnifyLast: CGFloat = 1
+    // Board frame manipulation (slice 3): a stable board viewport captured at gesture start (pan/zoom
+    // don't change mid-drag) so board coords stay correct even while the frame itself moves.
+    @State private var dragBV = Viewport(scale: 1, offset: .zero)
+    @State private var frameDragId: EntityID?
+    @State private var frameStartPos: Vec2 = .zero
+    @State private var frameStartSize: Vec2 = .one
+    @State private var frameStartBoard: Vec2 = .zero
+    @State private var frameResizeCorner = 0 // 0=TL 1=TR 2=BL 3=BR
+    @State private var renamingFrame: EntityID?
     @State private var began = false
     @State private var mode: Mode = .none
     @State private var txn: TransactionID?
@@ -59,10 +68,12 @@ struct CanvasArea: View {
                 MetalCanvasView(model: model)
                 frameChrome(viewSize: geo.size)
                 overlay(viewport: viewport, viewSize: geo.size)
+                renameOverlay(viewSize: geo.size)
             }
             .contentShape(Rectangle())
             .gesture(dragGesture(viewport))
             .simultaneousGesture(zoomGesture(viewSize: geo.size))
+            .simultaneousGesture(renameTapGesture(viewSize: geo.size))
             .overlay(alignment: .topLeading) { toolbar }
             .overlay(alignment: .bottomTrailing) { zoomControls(viewSize: geo.size) }
         }
@@ -143,10 +154,55 @@ struct CanvasArea: View {
         return Viewport(scale: bv.scale, offset: bv.toView(pos))
     }
 
+    /// Reconstruct the board viewport from the active-frame viewport (same pan/zoom; just back out
+    /// the active frame's board offset). Used inside the gesture, which only carries `viewport`.
+    private func boardViewport(from active: Viewport) -> Viewport {
+        let pos = model.mainComp?.boardPosition ?? .zero
+        return Viewport(scale: active.scale, offset: active.offset - pos * active.scale)
+    }
+
+    private enum ChromeHit { case move(EntityID); case resize(EntityID, Int) }
+
+    /// Hit-test the board chrome (select tool): a frame's title strip → move; the active frame's
+    /// corner handles → resize. View-space, so tolerances are screen pixels.
+    private func frameChromeHit(at sp: CGPoint, bv: Viewport) -> ChromeHit? {
+        if let active = model.mainComp { // resize handles only on the focused frame
+            let corners = [Vec2(0, 0), Vec2(1, 0), Vec2(0, 1), Vec2(1, 1)]
+            for (i, c) in corners.enumerated() {
+                let p = bv.toView(active.boardPosition + Vec2(active.size.x * c.x, active.size.y * c.y))
+                if hypot(p.x - sp.x, p.y - sp.y) < 12 { return .resize(active.id, i) }
+            }
+        }
+        for f in model.frames.reversed() { // title strip just above each frame; topmost wins
+            let tl = bv.toView(f.boardPosition)
+            let w = f.size.x * bv.scale
+            if sp.x >= tl.x - 4, sp.x <= tl.x + max(w, 80), sp.y >= tl.y - 20, sp.y <= tl.y + 2 {
+                return .move(f.id)
+            }
+        }
+        return nil
+    }
+
+    /// New (origin, size) for resizing `corner`, keeping the opposite corner anchored, min 16 units.
+    private func resizedFrame(corner: Int, origin: Vec2, size: Vec2, to bp: Vec2) -> (Vec2, Vec2) {
+        var x0 = origin.x, y0 = origin.y, x1 = origin.x + size.x, y1 = origin.y + size.y
+        switch corner {
+        case 0: x0 = bp.x; y0 = bp.y
+        case 1: x1 = bp.x; y0 = bp.y
+        case 2: x0 = bp.x; y1 = bp.y
+        default: x1 = bp.x; y1 = bp.y
+        }
+        let minS = 16.0
+        if x1 - x0 < minS { if corner == 0 || corner == 2 { x0 = x1 - minS } else { x1 = x0 + minS } }
+        if y1 - y0 < minS { if corner == 0 || corner == 1 { y0 = y1 - minS } else { y1 = y0 + minS } }
+        return (Vec2(x0, y0), Vec2(x1 - x0, y1 - y0))
+    }
+
     // MARK: Board chrome (frame outlines + labels) and pan/zoom controls
 
-    /// Outline + name label per frame, drawn over the rendered board. The active frame is accented;
-    /// others are dimmed. Non-interactive — activation/pan happen through the drag gesture.
+    /// Outline + name label per frame, drawn over the rendered board, plus corner resize handles on
+    /// the active frame. Non-interactive — move/resize/focus happen through the drag gesture; rename
+    /// through the double-click gesture + `renameOverlay`.
     @ViewBuilder
     private func frameChrome(viewSize: CGSize) -> some View {
         let bv = boardViewport(for: viewSize)
@@ -155,19 +211,63 @@ struct CanvasArea: View {
             let tl = bv.toView(frame.boardPosition)
             let w = frame.size.x * bv.scale, h = frame.size.y * bv.scale
             ZStack(alignment: .topLeading) {
-                Text(frame.name.isEmpty ? "Frame" : frame.name)
-                    .font(.system(size: 11, weight: isActive ? .semibold : .regular))
-                    .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
-                    .fixedSize()
-                    .position(x: tl.x + 1, y: tl.y - 12) // label sits just above the frame
+                if renamingFrame != frame.id {
+                    Text(frame.name.isEmpty ? "Frame" : frame.name)
+                        .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                        .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+                        .fixedSize()
+                        .position(x: tl.x + 1, y: tl.y - 12) // label sits just above the frame
+                }
                 RoundedRectangle(cornerRadius: 2)
                     .stroke(isActive ? Color.accentColor : Color.white.opacity(0.18),
                             lineWidth: isActive ? 1.5 : 1)
                     .frame(width: max(w, 1), height: max(h, 1))
                     .position(x: tl.x + w / 2, y: tl.y + h / 2)
+                if isActive {
+                    ForEach(0..<4, id: \.self) { i in
+                        let c = [Vec2(0, 0), Vec2(1, 0), Vec2(0, 1), Vec2(1, 1)][i]
+                        let p = bv.toView(frame.boardPosition + Vec2(frame.size.x * c.x, frame.size.y * c.y))
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.white)
+                            .overlay(RoundedRectangle(cornerRadius: 1).stroke(Color.accentColor, lineWidth: 1))
+                            .frame(width: 8, height: 8)
+                            .position(x: p.x, y: p.y)
+                    }
+                }
             }
         }
         .allowsHitTesting(false)
+    }
+
+    /// Inline editor shown over a frame's title while renaming (double-click a board label). Present
+    /// only during rename, so it never competes with the move/pan drag gestures.
+    @ViewBuilder
+    private func renameOverlay(viewSize: CGSize) -> some View {
+        if let id = renamingFrame, let frame = model.document.composition(id) {
+            let bv = boardViewport(for: viewSize)
+            let tl = bv.toView(frame.boardPosition)
+            FrameNameField(initial: frame.name) { newName in
+                model.renameFrame(id, to: newName); renamingFrame = nil
+            } onCancel: { renamingFrame = nil }
+            .frame(width: 160)
+            .position(x: tl.x + 80, y: tl.y - 12)
+        }
+    }
+
+    /// Double-click a frame's title strip to rename it (board side; the layers panel has its own).
+    private func renameTapGesture(viewSize: CGSize) -> some Gesture {
+        SpatialTapGesture(count: 2)
+            .onEnded { value in
+                let bv = boardViewport(for: viewSize)
+                for f in model.frames.reversed() {
+                    let tl = bv.toView(f.boardPosition)
+                    let w = f.size.x * bv.scale
+                    if value.location.x >= tl.x - 4, value.location.x <= tl.x + max(w, 80),
+                       value.location.y >= tl.y - 20, value.location.y <= tl.y + 2 {
+                        model.setActiveFrame(f.id); renamingFrame = f.id; return
+                    }
+                }
+            }
     }
 
     private func zoomGesture(viewSize: CGSize) -> some Gesture {
@@ -214,6 +314,19 @@ struct CanvasArea: View {
                     let d = Vec2(value.translation.width - panAccum.width,
                                  value.translation.height - panAccum.height)
                     model.panBoard(by: d); panAccum = value.translation
+                case .frameMove:
+                    if let id = frameDragId, let txn {
+                        let bp = dragBV.toComp(Vec2(value.location.x, value.location.y))
+                        model.setFramePosition(id, to: frameStartPos + (bp - frameStartBoard), within: txn)
+                    }
+                case .frameResize:
+                    if let id = frameDragId, let txn {
+                        let bp = dragBV.toComp(Vec2(value.location.x, value.location.y))
+                        let (pos, size) = resizedFrame(corner: frameResizeCorner, origin: frameStartPos,
+                                                       size: frameStartSize, to: bp)
+                        model.setFrameSize(id, to: size, within: txn)
+                        model.setFramePosition(id, to: pos, within: txn)
+                    }
                 case .none: break
                 }
             }
@@ -222,7 +335,7 @@ struct CanvasArea: View {
                 if mode == .create { model.tool = .select }
                 if let txn { model.store.commit(txn) }
                 txn = nil; mode = .none; began = false; snapGuides = []
-                marqueeStart = nil; marqueeCurrent = nil; createId = nil
+                marqueeStart = nil; marqueeCurrent = nil; createId = nil; frameDragId = nil
             }
     }
 
@@ -270,6 +383,27 @@ struct CanvasArea: View {
                 mode = .rotate; pivot = g.pivotComp; startRotation = g.rotation
                 startAngle = angle(pressComp - g.pivotComp)
                 txn = model.store.begin("Rotate \(layer.name)")
+                return
+            }
+        }
+
+        // Board chrome (select tool): grab a frame's title to move it, or a corner handle to resize.
+        if model.tool == .select {
+            let bv = boardViewport(from: viewport)
+            if let chrome = frameChromeHit(at: sp, bv: bv) {
+                dragBV = bv
+                switch chrome {
+                case .move(let id):
+                    model.setActiveFrame(id); frameDragId = id
+                    frameStartPos = model.document.composition(id)?.boardPosition ?? .zero
+                    frameStartBoard = bv.toComp(Vec2(sp.x, sp.y))
+                    mode = .frameMove; txn = model.store.begin("Move Frame")
+                case .resize(let id, let cornerIdx):
+                    model.setActiveFrame(id); frameDragId = id
+                    if let f = model.document.composition(id) { frameStartPos = f.boardPosition; frameStartSize = f.size }
+                    frameResizeCorner = cornerIdx
+                    mode = .frameResize; txn = model.store.begin("Resize Frame")
+                }
                 return
             }
         }
@@ -801,6 +935,30 @@ private struct NameEditor: View {
         TextField("Layer name", text: $name)
             .textFieldStyle(.plain).font(.headline)
             .onSubmit { model.renameLayer(id, to: name) }
+    }
+}
+
+/// Inline frame-rename field (board overlay). Commits on Return, cancels on Escape, and auto-focuses
+/// so the user can type immediately after the double-click.
+struct FrameNameField: View {
+    @State private var name: String
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+    @FocusState private var focused: Bool
+
+    init(initial: String, onCommit: @escaping (String) -> Void, onCancel: @escaping () -> Void) {
+        _name = State(initialValue: initial)
+        self.onCommit = onCommit; self.onCancel = onCancel
+    }
+
+    var body: some View {
+        TextField("Frame name", text: $name)
+            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 11))
+            .focused($focused)
+            .onSubmit { onCommit(name) }
+            .onExitCommand { onCancel() }
+            .onAppear { focused = true }
     }
 }
 

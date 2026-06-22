@@ -12,6 +12,7 @@ extension AnyCommand.CompositionSetting {
         case "size": self = .size(try c.decode(Vec2.self, forKey: .value))
         case "backgroundColor": self = .backgroundColor(try c.decode(ColorValue.self, forKey: .value))
         case "name": self = .name(try c.decode(String.self, forKey: .value))
+        case "boardPosition": self = .boardPosition(try c.decode(Vec2.self, forKey: .value))
         default: throw CommandError.valueOutOfRange("unknown composition setting '\(key)'")
         }
     }
@@ -23,6 +24,7 @@ extension AnyCommand.CompositionSetting {
         case .size(let s): try c.encode("size", forKey: .key); try c.encode(s, forKey: .value)
         case .backgroundColor(let col): try c.encode("backgroundColor", forKey: .key); try c.encode(col, forKey: .value)
         case .name(let n): try c.encode("name", forKey: .key); try c.encode(n, forKey: .value)
+        case .boardPosition(let p): try c.encode("boardPosition", forKey: .key); try c.encode(p, forKey: .value)
         }
     }
 }

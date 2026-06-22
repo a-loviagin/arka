@@ -300,5 +300,41 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(m.frame(atBoardPoint: inside), id)
         XCTAssertNil(m.frame(atBoardPoint: Vec2(-50, -50)), "bare workspace hits no frame")
     }
+
+    func testFrameMoveAndResizeAreOneUndoStep() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.addFrame(width: 400, height: 300))
+        let startSize = m.document.composition(id)!.size
+        let txn = m.store.begin("Move Frame")
+        m.setFramePosition(id, to: Vec2(1200, 60), within: txn)
+        m.setFrameSize(id, to: Vec2(500, 400), within: txn)
+        m.store.commit(txn)
+        XCTAssertEqual(m.document.composition(id)?.boardPosition, Vec2(1200, 60))
+        XCTAssertEqual(m.document.composition(id)?.size, Vec2(500, 400))
+        m.store.undo() // position + size committed together
+        XCTAssertEqual(m.document.composition(id)?.size, startSize)
+    }
+
+    func testFrameResizeClampsToMinimum() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.addFrame(width: 400, height: 300))
+        let txn = m.store.begin("Resize")
+        m.setFrameSize(id, to: Vec2(2, 2), within: txn)
+        m.store.commit(txn)
+        let s = try XCTUnwrap(m.document.composition(id)?.size)
+        XCTAssertGreaterThanOrEqual(s.x, 16)
+        XCTAssertGreaterThanOrEqual(s.y, 16)
+    }
+
+    func testRenameFrameIgnoresBlankAndUnchanged() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.addFrame(width: 400, height: 300))
+        m.renameFrame(id, to: "Hero")
+        XCTAssertEqual(m.document.composition(id)?.name, "Hero")
+        m.renameFrame(id, to: "   ")
+        XCTAssertEqual(m.document.composition(id)?.name, "Hero", "blank rename is a no-op")
+        m.store.undo()
+        XCTAssertNotEqual(m.document.composition(id)?.name, "Hero", "rename is undoable")
+    }
 }
 #endif

@@ -10,7 +10,7 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
-**Phase 23 — multi-frame canvas (in progress).** A Figma-style board: a document holds many
+**Phase 23 — multi-frame canvas (done).** A Figma-style board: a document holds many
 **frames**, each frame *is* a `Composition` (its own size, fps, duration, timeline, and layers).
 - **Slice 1 (done)** — `AddComposition` / `RemoveComposition` kernel commands; an active-frame model
   (the canvas, timeline, and inspector follow `activeCompId`); the layers panel is **grouped by
@@ -20,7 +20,11 @@ web/server port a port rather than a rewrite.
   `boardPosition`), rendered together by reusing the precomp-composite path (each frame is a placed
   `Precomp` with its own background). One global playhead drives every frame's timeline. Pinch /
   zoom-control to zoom, drag the bare workspace to pan, click a frame to focus it; frame outlines +
-  name labels overlay the board. `Viewport` generalized to explicit pan/zoom. 156 tests.
+  name labels overlay the board. `Viewport` generalized to explicit pan/zoom.
+- **Slice 3 (done)** — direct manipulation on the board: **drag a frame's title** to reposition it,
+  drag the focused frame's **corner handles** to resize (`SetCompositionSetting.boardPosition`; move
+  + resize commit as one ⌘Z). **Rename** a frame by double-clicking its board label or its layers-
+  panel header (inline field, Return commits / Esc cancels). 161 tests.
 
 **Phase 22 — type-aware inspector (done).** A Figma-style "operate the selected layer" panel keyed to
 the layer type, every field reading the resolved value at the playhead and writing one command
