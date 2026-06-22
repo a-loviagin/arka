@@ -16,13 +16,22 @@ public struct EvaluatedLayer: Sendable, Equatable {
     public let size: Vec2
 }
 
+/// Measures a text layer's content size in points. The kernel can't lay out text (no CoreText —
+/// platform-strategy.md §2), so the app/render side supplies this; without it text reports `.zero`.
+public protocol TextMeasuring {
+    func measure(_ text: TextContent, at t: TimeInterval) -> Vec2
+}
+
 /// Evaluates a whole composition at one time into a flat, render-ordered array — one O(n) sweep
 /// with a memoized world-matrix pass, no recursion blow-ups (render-engine.md §1).
 public struct SceneEvaluator {
     public let document: MotionDocument
+    /// Optional text sizer (app-side, CoreText-backed). nil → text layers have `.zero` size.
+    public let textMeasurer: (any TextMeasuring)?
 
-    public init(document: MotionDocument) {
+    public init(document: MotionDocument, textMeasurer: (any TextMeasuring)? = nil) {
         self.document = document
+        self.textMeasurer = textMeasurer
     }
 
     /// Resolve every layer of `compId` at comp-time `t`, in render order (bottom → top).
@@ -91,8 +100,10 @@ public struct SceneEvaluator {
             return document.asset(v.assetId)?.pixelSize ?? .zero
         case .precomp(let p):
             return document.composition(p.compositionId)?.size ?? .zero
-        case .text, .group, .null:
-            return .zero // text needs CoreText layout (app-side); group/null have no intrinsic size
+        case .text(let txt):
+            return textMeasurer?.measure(txt, at: t) ?? .zero // CoreText layout is app-side
+        case .group, .null:
+            return .zero // group/null have no intrinsic size
         }
     }
 }

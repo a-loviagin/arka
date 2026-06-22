@@ -43,7 +43,7 @@ public struct RenderTreeBuilder {
     private func buildNodes(compId: EntityID, at t: TimeInterval,
                             visiting: Set<EntityID>) -> [RenderNode] {
         guard let comp = document.composition(compId) else { return [] }
-        let scene = SceneEvaluator(document: document)
+        let scene = SceneEvaluator(document: document, textMeasurer: textEngine)
         let evById = Dictionary(uniqueKeysWithValues:
             scene.evaluate(compId: compId, at: t).map { ($0.layerId, $0) })
 

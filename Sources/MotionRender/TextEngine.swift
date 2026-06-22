@@ -44,6 +44,22 @@ public final class TextEngine {
         switch a { case .left: 0; case .center: 1; case .right: 2 }
     }
 
+    /// Content size in points (line width × ascent+descent) — what the kernel uses to place the
+    /// layer's anchor and to hit-test/gizmo text. Same CoreText path as layout, so measure and
+    /// render agree.
+    func measure(_ text: TextContent, fontSize: Double, tracking: Double) -> Vec2 {
+        guard !text.string.isEmpty else { return .zero }
+        let baseFont = CTFontCreateWithName(text.fontFamily as CFString, CGFloat(fontSize), nil)
+        let attr = NSAttributedString(string: text.string, attributes: [
+            .init(kCTFontAttributeName as String): baseFont,
+            .init(kCTKernAttributeName as String): CGFloat(tracking),
+        ])
+        let line = CTLineCreateWithAttributedString(attr as CFAttributedString)
+        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+        return Vec2(Double(width), Double(ascent + descent))
+    }
+
     private func layout(_ text: TextContent, fontSize: Double, tracking: Double) -> [GlyphQuad] {
         let baseFont = CTFontCreateWithName(text.fontFamily as CFString, CGFloat(fontSize), nil)
         let attributes: [NSAttributedString.Key: Any] = [
@@ -54,14 +70,12 @@ public final class TextEngine {
         let line = CTLineCreateWithAttributedString(attr as CFAttributedString)
 
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-        let lineWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+        _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         let baselineY = Float(ascent)
-        let startX: Float
-        switch text.alignment {
-        case .left: startX = 0
-        case .center: startX = -Float(lineWidth) / 2
-        case .right: startX = -Float(lineWidth)
-        }
+        // Top-left local origin ([0,width]×[0,height]); centering/anchoring is the layer transform's
+        // job (anchor × measured size), so text behaves like every other [0,size] layer for
+        // hit-testing and gizmos. Single-line CTLine → horizontal alignment is identity here.
+        let startX: Float = 0
 
         var quads: [GlyphQuad] = []
         let runs = CTLineGetGlyphRuns(line) as! [CTRun]
@@ -99,6 +113,14 @@ public final class TextEngine {
             return (f as! CTFont)
         }
         return fallback
+    }
+}
+
+/// Lets the kernel size text layers (hit-testing, gizmos, anchor placement) via the same CoreText
+/// path that renders them — closing the "text has no intrinsic size" gap (SceneEvaluator).
+extension TextEngine: TextMeasuring {
+    public func measure(_ text: TextContent, at t: TimeInterval) -> Vec2 {
+        measure(text, fontSize: text.fontSize.resolve(at: t), tracking: text.tracking?.resolve(at: t) ?? 0)
     }
 }
 #endif

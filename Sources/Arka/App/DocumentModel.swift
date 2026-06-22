@@ -347,7 +347,8 @@ final class DocumentModel {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let comp = mainComp else { return }
         guard let digest = DocumentDigest.summarize(document, compId: comp.id,
-                                                    selection: selection, at: playback.currentTime) else {
+                                                    selection: selection, at: playback.currentTime,
+                                                    textMeasurer: textEngine) else {
             aiState = .failed("no composition to edit")
             return
         }

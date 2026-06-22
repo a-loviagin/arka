@@ -34,9 +34,11 @@ public struct DocumentDigest: Codable, Sendable, Equatable {
     public var selectedLayers: [Layer]
 
     public static func summarize(_ document: MotionDocument, compId: EntityID,
-                                 selection: Set<EntityID> = [], at t: TimeInterval = 0) -> DocumentDigest? {
+                                 selection: Set<EntityID> = [], at t: TimeInterval = 0,
+                                 textMeasurer: (any TextMeasuring)? = nil) -> DocumentDigest? {
         guard let comp = document.composition(compId) else { return nil }
-        let evaluated = SceneEvaluator(document: document).evaluate(compId: compId, at: t)
+        let evaluated = SceneEvaluator(document: document, textMeasurer: textMeasurer)
+            .evaluate(compId: compId, at: t)
         let boundsById = Dictionary(uniqueKeysWithValues: evaluated.map { ($0.layerId, $0.boundingBox) })
 
         let summaries = comp.layersInRenderOrder.map { layer -> LayerSummary in

@@ -5,11 +5,12 @@ import Foundation
 /// layer's local space via the inverse world matrix, and test against local bounds. Exact enough
 /// for v1 (axis-aligned bounds in local space — correct under rotation/scale via the inverse).
 public enum HitTester {
-    /// Topmost active layer whose bounds contain `compPoint`, or nil. Text/group/null layers have
-    /// no intrinsic size yet and are skipped.
+    /// Topmost active layer whose bounds contain `compPoint`, or nil. Layers with no measurable
+    /// size (group/null, or text without a measurer) are skipped.
     public static func topLayer(in document: MotionDocument, compId: EntityID,
-                                at t: TimeInterval, compPoint: Vec2) -> EntityID? {
-        let scene = SceneEvaluator(document: document)
+                                at t: TimeInterval, compPoint: Vec2,
+                                textMeasurer: (any TextMeasuring)? = nil) -> EntityID? {
+        let scene = SceneEvaluator(document: document, textMeasurer: textMeasurer)
         let evaluated = scene.evaluate(compId: compId, at: t)
         // evaluated is bottom→top; reverse for topmost-first.
         for ev in evaluated.reversed() where ev.active && ev.opacity > 0.01 {

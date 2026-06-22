@@ -193,7 +193,8 @@ struct CanvasArea: View {
         }
 
         // Body hit-test → select + move; empty → marquee.
-        let hit = HitTester.topLayer(in: model.document, compId: comp.id, at: t, compPoint: pressComp)
+        let hit = HitTester.topLayer(in: model.document, compId: comp.id, at: t, compPoint: pressComp,
+                                     textMeasurer: model.textEngine)
         let shift = NSEvent.modifierFlags.contains(.shift)
         if let hit {
             if shift {
@@ -263,7 +264,7 @@ struct CanvasArea: View {
         guard let a = marqueeStart, let b = marqueeCurrent, let comp = model.mainComp else { return }
         let p0 = viewport.toComp(Vec2(min(a.x, b.x), min(a.y, b.y)))
         let p1 = viewport.toComp(Vec2(max(a.x, b.x), max(a.y, b.y)))
-        let evaluated = SceneEvaluator(document: model.document)
+        let evaluated = SceneEvaluator(document: model.document, textMeasurer: model.textEngine)
             .evaluate(compId: comp.id, at: model.playback.currentTime)
         var hits = Set<EntityID>()
         for ev in evaluated where ev.active && ev.size.x > 0 {
@@ -280,7 +281,7 @@ struct CanvasArea: View {
     private func computeSnapData(comp: Composition, t: TimeInterval) {
         candidatesX = [0, comp.size.x / 2, comp.size.x]
         candidatesY = [0, comp.size.y / 2, comp.size.y]
-        let evaluated = SceneEvaluator(document: model.document).evaluate(compId: comp.id, at: t)
+        let evaluated = SceneEvaluator(document: model.document, textMeasurer: model.textEngine).evaluate(compId: comp.id, at: t)
         for ev in evaluated where ev.size.x > 0 && !model.selection.contains(ev.layerId) {
             let b = ev.boundingBox
             candidatesX += [b.min.x, (b.min.x + b.max.x) / 2, b.max.x]
@@ -303,7 +304,7 @@ struct CanvasArea: View {
     /// Screen-space polygons for every selected layer's bounds.
     private func selectionPolys(_ viewport: Viewport) -> [(String, [CGPoint])] {
         guard let comp = model.mainComp else { return [] }
-        let evaluated = SceneEvaluator(document: model.document)
+        let evaluated = SceneEvaluator(document: model.document, textMeasurer: model.textEngine)
             .evaluate(compId: comp.id, at: model.playback.currentTime)
         return evaluated.compactMap { ev in
             guard model.selection.contains(ev.layerId), ev.size.x > 0, ev.size.y > 0 else { return nil }
@@ -318,7 +319,7 @@ struct CanvasArea: View {
         guard model.selection.count == 1, let sel = model.selection.first, let comp = model.mainComp,
               let layer = model.layer(sel) else { return nil }
         let t = model.playback.currentTime
-        let evaluated = SceneEvaluator(document: model.document).evaluate(compId: comp.id, at: t)
+        let evaluated = SceneEvaluator(document: model.document, textMeasurer: model.textEngine).evaluate(compId: comp.id, at: t)
         guard let ev = evaluated.first(where: { $0.layerId == sel }), ev.size.x > 0, ev.size.y > 0
         else { return nil }
 
