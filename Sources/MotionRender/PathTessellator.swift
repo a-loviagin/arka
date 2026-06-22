@@ -28,9 +28,10 @@ enum PathTessellator {
 
     // MARK: Flatten
 
-    /// Flatten a subpath to a closed polyline of points (layer-local). Open subpaths are treated as
-    /// closed for filling (their implied closing segment is added).
-    private static func flatten(_ sub: PathData.Subpath) -> [SIMD2<Float>] {
+    /// Flatten a subpath to a polyline of points (layer-local). Closed subpaths include the wrap
+    /// segment; open subpaths stop at the last vertex (so the stroker can draw an open line). Shared
+    /// with `PathStroker`.
+    static func flatten(_ sub: PathData.Subpath) -> [SIMD2<Float>] {
         let vs = sub.vertices
         guard vs.count >= 2 else { return vs.map(point) }
         var out: [SIMD2<Float>] = []

@@ -100,10 +100,20 @@ public struct RenderTreeBuilder {
             switch layer.content {
             case .shape(let shape):
                 if shape.geometry == .path {
-                    let fill = SIMD4<Float>(shape.fillColor?.resolve(at: t) ?? .clear)
-                    guard let p = shape.path, let mesh = PathTessellator.mesh(p, fill: fill) else { continue }
+                    guard let p = shape.path else { continue }
+                    var meshes: [PathMesh] = []
+                    if let fc = shape.fillColor?.resolve(at: t), fc.a > 0.001,
+                       let fillMesh = PathTessellator.mesh(p, fill: SIMD4<Float>(fc)) {
+                        meshes.append(fillMesh)
+                    }
+                    if let sc = shape.strokeColor?.resolve(at: t),
+                       let sw = shape.strokeWidth?.resolve(at: t), sw > 0.01,
+                       let strokeMesh = PathStroker.mesh(p, width: Float(sw), color: SIMD4<Float>(sc)) {
+                        meshes.append(strokeMesh) // drawn above the fill
+                    }
+                    guard !meshes.isEmpty else { continue }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,
-                                                  content: .path(mesh), effects: effects, blendMode: layer.blendMode)))
+                                                  content: .path(meshes), effects: effects, blendMode: layer.blendMode)))
                 } else {
                     guard let resolved = resolveShape(shape, at: t) else { continue }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,

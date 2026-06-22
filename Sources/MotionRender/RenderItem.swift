@@ -62,7 +62,9 @@ enum ResolvedEffect {
 /// ordered draw walk so z-order is always respected.
 enum RenderContent {
     case shape(ResolvedShape)
-    case path(PathMesh)
+    /// One vector shape, drawn as ordered colored sub-meshes (fill below, stroke above). Both are
+    /// triangle lists so the whole shape is one layer — effects and blend mode apply to the unit.
+    case path([PathMesh])
     case glyphRun(GlyphRun)
     case image(ImageQuad)
 }

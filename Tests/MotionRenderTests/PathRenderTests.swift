@@ -37,7 +37,47 @@ final class PathRenderTests: XCTestCase {
         XCTAssertGreaterThan(mesh.vertices.count, 6, "a curved edge flattens to many triangles")
     }
 
+    // MARK: Stroke geometry
+
+    func testStrokeRibbonHasTwoTrianglesPerSegment() throws {
+        let line = PathData(subpaths: [.init(vertices: [
+            .init(point: Vec2(0, 0)), .init(point: Vec2(50, 0)), .init(point: Vec2(100, 0)),
+        ], closed: false)])
+        let mesh = try XCTUnwrap(PathStroker.mesh(line, width: 8, color: SIMD4<Float>(1, 0, 0, 1)))
+        XCTAssertEqual(mesh.vertices.count, 12, "2 segments × 2 triangles × 3 verts")
+        XCTAssertEqual(mesh.fill, SIMD4<Float>(1, 0, 0, 1))
+    }
+
+    func testZeroWidthOrClearStrokeYieldsNoMesh() {
+        let line = PathData(subpaths: [.init(vertices: [.init(point: Vec2(0, 0)), .init(point: Vec2(10, 0))])])
+        XCTAssertNil(PathStroker.mesh(line, width: 0, color: SIMD4<Float>(1, 1, 1, 1)))
+        XCTAssertNil(PathStroker.mesh(line, width: 5, color: SIMD4<Float>(1, 1, 1, 0)), "transparent stroke")
+    }
+
     // MARK: Render (needs Metal)
+
+    func testStrokedOpenPathDrawsAlongTheLineNotBeside() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw XCTSkip("No Metal device") }
+        let renderer = try MetalRenderer(device: device)
+        // Open horizontal line at y=50, no fill, thick red stroke.
+        let line = PathData(subpaths: [.init(vertices: [
+            .init(point: Vec2(10, 50)), .init(point: Vec2(90, 50)),
+        ], closed: false)])
+        let layer = Layer(id: "p", name: "p", sortKey: "a0",
+                          content: .shape(ShapeContent(geometry: .path, fillColor: nil,
+                                                       strokeColor: .static(ColorValue(r: 1, g: 0, b: 0, a: 1)),
+                                                       strokeWidth: .static(16), path: line)),
+                          transform: Transform(anchor: .static(Vec2(0, 0)), position: .static(Vec2(0, 0))))
+        let comp = Composition(id: "comp_main", size: Vec2(100, 100), fps: 60, duration: 1,
+                               backgroundColor: .black, layers: [layer])
+        let d = MotionDocument(id: "d", compositions: [comp], mainCompositionId: "comp_main")
+        let nodes = RenderTreeBuilder(document: d).build(compId: "comp_main", at: 0)
+        XCTAssertEqual(nodes.count, 1, "stroke-only path still produces one node")
+        let img = renderer.renderToImage(nodes: nodes, compSize: SIMD2<Float>(100, 100),
+                                         pixelSize: (100, 100), clear: SIMD4<Double>(0, 0, 0, 1))!
+        XCTAssertGreaterThan(img.pixel(50, 50).r, 200, "on the line: stroke is drawn")
+        XCTAssertLessThan(img.pixel(50, 10).r, 20, "far above the line: background")
+    }
 
     func testFilledTriangleCoversInteriorNotExterior() throws {
         guard let device = MTLCreateSystemDefaultDevice() else {

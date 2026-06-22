@@ -344,12 +344,14 @@ public final class MetalRenderer {
                 if pendingShapeCount == 0 { pendingShapeBase = shapes.count }
                 shapes.append(shapeInstance(s, clip: clip, opacity: item.opacity))
                 pendingShapeCount += 1
-            case .path(let mesh):
+            case .path(let meshes):
                 flushShapes()
-                if let buf = makeBuffer(mesh.vertices) {
-                    transient.append(buf)
-                    ops.append(.path(buffer: buf, count: mesh.vertices.count,
-                                     uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: item.opacity)))
+                for mesh in meshes {
+                    if let buf = makeBuffer(mesh.vertices) {
+                        transient.append(buf)
+                        ops.append(.path(buffer: buf, count: mesh.vertices.count,
+                                         uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: item.opacity)))
+                    }
                 }
             case .glyphRun(let run):
                 flushShapes()
@@ -479,11 +481,13 @@ public final class MetalRenderer {
             if let buf = makeBuffer([shapeInstance(s, clip: clip, opacity: 1)]) {
                 transient.append(buf); drawShapes(enc, buf, base: 0, count: 1)
             }
-        case .path(let mesh):
-            if let buf = makeBuffer(mesh.vertices) {
-                transient.append(buf)
-                drawPath(enc, buf, count: mesh.vertices.count,
-                         uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: 1))
+        case .path(let meshes):
+            for mesh in meshes {
+                if let buf = makeBuffer(mesh.vertices) {
+                    transient.append(buf)
+                    drawPath(enc, buf, count: mesh.vertices.count,
+                             uniform: PathUniform(clipFromLocal: clip, fill: mesh.fill, opacity: 1))
+                }
             }
         case .glyphRun(let run):
             let insts = glyphInstances(run, clip: clip, opacity: 1)
