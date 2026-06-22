@@ -58,6 +58,10 @@ let package = Package(
             name: "Arka",
             dependencies: ["MotionKernel", "MotionRender", "MotionAI"]
         ),
+        .testTarget(
+            name: "ArkaTests",
+            dependencies: ["Arka", "MotionKernel"]
+        ),
         // The backend service: a thin Hummingbird HTTP layer over GenerationService. Runs the same
         // kernel + AI pipeline as the app, so the .motion contract is identical on both sides.
         .executableTarget(

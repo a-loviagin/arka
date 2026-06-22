@@ -66,6 +66,9 @@ struct CanvasArea: View {
     private var toolbar: some View {
         HStack(spacing: 4) {
             toolButton("cursorarrow", .select)
+            toolButton("rectangle", .rect)
+            toolButton("circle", .ellipse)
+            toolButton("character", .text)
             toolButton("scope", .anchor)
         }
         .padding(6).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding(8)
@@ -152,6 +155,14 @@ struct CanvasArea: View {
         let sp = value.startLocation
         let pressComp = viewport.toComp(Vec2(sp.x, sp.y))
         let t = model.playback.currentTime
+
+        // Creation tools: click to place a layer at the press point, then revert to select.
+        switch model.tool {
+        case .rect: model.createLayer(.rect, at: pressComp); model.tool = .select; mode = .none; return
+        case .ellipse: model.createLayer(.ellipse, at: pressComp); model.tool = .select; mode = .none; return
+        case .text: model.createLayer(.text, at: pressComp); model.tool = .select; mode = .none; return
+        case .select, .anchor: break
+        }
 
         // Anchor tool: drag the selected layer's anchor.
         if model.tool == .anchor, let g = gizmo(viewport), let sel = model.selection.first,

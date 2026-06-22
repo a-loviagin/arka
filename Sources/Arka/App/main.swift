@@ -116,7 +116,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func undo(_ sender: Any?) { model.store.undo() }
     @objc func redo(_ sender: Any?) { model.store.redo() }
-    @objc func deleteKeyframe(_ sender: Any?) { model.deleteSelectedKeyframe() }
+
+    // Insert
+    @objc func insertRectangle(_ sender: Any?) { model.createLayerAtCenter(.rect) }
+    @objc func insertEllipse(_ sender: Any?) { model.createLayerAtCenter(.ellipse) }
+    @objc func insertText(_ sender: Any?) { model.createLayerAtCenter(.text) }
+    @objc func duplicateSelection(_ sender: Any?) { model.duplicateSelectedLayers() }
+
+    /// ⌫ is context-aware: delete the selected keyframe if one is picked, else the selected layer(s).
+    @objc func deleteSelection(_ sender: Any?) {
+        if model.selectedKeyframe != nil { model.deleteSelectedKeyframe() }
+        else { model.deleteSelectedLayers() }
+    }
 
     private func presentError(_ error: Error) {
         let alert = NSAlert()
@@ -174,13 +185,30 @@ func buildMainMenu(target: AppDelegate) {
     redo.target = target
     editMenu.addItem(redo)
     editMenu.addItem(.separator())
-    let del = NSMenuItem(title: "Delete Keyframe",
-                         action: #selector(AppDelegate.deleteKeyframe(_:)),
+    let dup = NSMenuItem(title: "Duplicate",
+                         action: #selector(AppDelegate.duplicateSelection(_:)), keyEquivalent: "d")
+    dup.target = target
+    editMenu.addItem(dup)
+    let del = NSMenuItem(title: "Delete",
+                         action: #selector(AppDelegate.deleteSelection(_:)),
                          keyEquivalent: "\u{8}") // ⌫
     del.keyEquivalentModifierMask = []
     del.target = target
     editMenu.addItem(del)
     editItem.submenu = editMenu
+
+    let insertItem = NSMenuItem()
+    mainMenu.addItem(insertItem)
+    let insertMenu = NSMenu(title: "Insert")
+    func addInsert(_ title: String, _ action: Selector) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = target
+        insertMenu.addItem(item)
+    }
+    addInsert("Rectangle", #selector(AppDelegate.insertRectangle(_:)))
+    addInsert("Ellipse", #selector(AppDelegate.insertEllipse(_:)))
+    addInsert("Text", #selector(AppDelegate.insertText(_:)))
+    insertItem.submenu = insertMenu
 
     let aiItem = NSMenuItem()
     mainMenu.addItem(aiItem)

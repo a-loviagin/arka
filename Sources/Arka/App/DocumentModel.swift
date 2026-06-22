@@ -65,8 +65,9 @@ final class DocumentModel {
     struct SelectedKeyframe: Equatable { var path: String; var t: TimeInterval }
     var selectedKeyframe: SelectedKeyframe?
 
-    /// Active canvas tool (editor-ui.md §3 keymap: V select, A anchor).
-    enum Tool { case select, anchor }
+    /// Active canvas tool (editor-ui.md §3 keymap: V select, R rect, O ellipse, T text, A anchor).
+    /// Creation tools place a layer at the click point, then revert to `.select`.
+    enum Tool { case select, anchor, rect, ellipse, text }
     var tool: Tool = .select
 
     var mainComp: Composition? { document.mainComposition }
@@ -240,6 +241,91 @@ final class DocumentModel {
             command = .setKeyframeInterp(path: path, t: t, interp: .spring(.bouncy))
         }
         try? store.perform(command, label: "Easing: \(preset.rawValue)")
+    }
+
+    // MARK: Authoring — create / delete / duplicate (editor-ui.md §1,2)
+
+    enum NewLayerKind { case rect, ellipse, text }
+
+    /// Mints client-prefixed layer IDs for hand-authored content.
+    private var ids = IDGenerator(clientId: String(UUID().uuidString.prefix(4)))
+
+    /// A sort key above every current layer (new layers land on top of z-order).
+    private func topSortKey() -> SortKey {
+        SortKey.between(mainComp?.layers.map(\.sortKey).max(), nil)
+    }
+
+    /// Create a layer of `kind` centered at `compPoint`, on top and selected — one ⌘Z.
+    @discardableResult
+    func createLayer(_ kind: NewLayerKind, at compPoint: Vec2) -> EntityID? {
+        guard let comp = mainComp else { return nil }
+        let id = ids.next("layer")
+        let content: LayerContent
+        let name: String
+        switch kind {
+        case .rect:
+            content = .shape(ShapeContent(geometry: .rect, size: .static(Vec2(240, 160)),
+                                          fillColor: .static(ColorValue(hex: "#5B8CFF")!)))
+            name = "Rectangle"
+        case .ellipse:
+            content = .shape(ShapeContent(geometry: .ellipse, size: .static(Vec2(200, 200)),
+                                          fillColor: .static(ColorValue(hex: "#FF6B6B")!)))
+            name = "Ellipse"
+        case .text:
+            content = .text(TextContent(string: "Text", fontFamily: "Helvetica", fontSize: .static(72),
+                                        fillColor: .static(.white), alignment: .center))
+            name = "Text"
+        }
+        let layer = Layer(id: id, name: name, sortKey: topSortKey(), content: content,
+                          transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(compPoint)))
+        guard (try? store.perform(.addLayer(layer: layer, compId: comp.id), label: "Add \(name)")) != nil
+        else { return nil }
+        selection = [id]
+        return id
+    }
+
+    /// Menu convenience: create at the composition center.
+    @discardableResult
+    func createLayerAtCenter(_ kind: NewLayerKind) -> EntityID? {
+        guard let comp = mainComp else { return nil }
+        return createLayer(kind, at: Vec2(comp.size.x / 2, comp.size.y / 2))
+    }
+
+    func deleteSelectedLayers() {
+        guard let comp = mainComp else { return }
+        let targets = comp.layers.map(\.id).filter { selection.contains($0) }
+        guard !targets.isEmpty else { return }
+        let label = targets.count == 1 ? "Delete Layer" : "Delete \(targets.count) Layers"
+        try? store.perform(.batch(commands: targets.map { .removeLayer(layerId: $0) }, label: label),
+                           label: label)
+        selection = []
+    }
+
+    /// Duplicate the selected layers (offset static ones by 20pt; animated transforms copied as-is),
+    /// select the copies — one ⌘Z. Copies are unparented to avoid dangling parent refs in v1.
+    func duplicateSelectedLayers() {
+        guard let comp = mainComp else { return }
+        let originals = comp.layers.filter { selection.contains($0.id) }.sorted { $0.sortKey < $1.sortKey }
+        guard !originals.isEmpty else { return }
+        var cmds: [AnyCommand] = []
+        var newIds: Set<EntityID> = []
+        var top = mainComp?.layers.map(\.sortKey).max()
+        for original in originals {
+            var copy = original
+            copy.id = ids.next("layer")
+            copy.name = original.name + " copy"
+            copy.parentId = nil
+            let key = SortKey.between(top, nil); top = key
+            copy.sortKey = key
+            if case .static(let p) = original.transform.position {
+                copy.transform.position = .static(Vec2(p.x + 20, p.y + 20))
+            }
+            cmds.append(.addLayer(layer: copy, compId: comp.id))
+            newIds.insert(copy.id)
+        }
+        let label = originals.count == 1 ? "Duplicate Layer" : "Duplicate \(originals.count) Layers"
+        try? store.perform(.batch(commands: cmds, label: label), label: label)
+        selection = newIds
     }
 
     // MARK: AI (ai-pipeline.md §1,5,7)
