@@ -154,7 +154,12 @@ public enum LottieExporter {
                 "s": staticArray([size.x, size.y]),
             ]))
         case .path:
-            warnings.append("Shape “\(name)” is a vector path — path/trim Lottie export is a follow-up; emitted as an empty group.")
+            if let path = s.path {
+                for sub in path.subpaths { items.append(pathShape(sub)) }
+                if s.trimStart != nil || s.trimEnd != nil || s.trimOffset != nil {
+                    items.append(trimItem(s, fps: fps, name: name, warnings: &warnings))
+                }
+            }
         }
 
         if let fill = s.fillColor, !(s.gradient != nil) {
@@ -192,6 +197,36 @@ public enum LottieExporter {
         ])
     }
 
+    /// A static `sh` (path) item. Our vertex in/out tangents are relative to the point — same as
+    /// Lottie's `i`/`o` — so the mapping is direct. (Path morphing / animated vertices is a follow-up.)
+    private static func pathShape(_ sub: PathData.Subpath) -> JSONValue {
+        let v = sub.vertices.map { JSONValue.nums([$0.point.x, $0.point.y]) }
+        let i = sub.vertices.map { JSONValue.nums([$0.inTangent.x, $0.inTangent.y]) }
+        let o = sub.vertices.map { JSONValue.nums([$0.outTangent.x, $0.outTangent.y]) }
+        return .object([
+            "ty": .string("sh"),
+            "ks": .object(["a": .int(0), "k": .object([
+                "c": .bool(sub.closed),
+                "v": .array(v), "i": .array(i), "o": .array(o),
+            ])]),
+        ])
+    }
+
+    /// Trim-paths (`tm`): our 0…1 fractions → Lottie percentages; trimOffset turns → degrees.
+    private static func trimItem(_ s: ShapeContent, fps: Double, name: String,
+                                 warnings: inout [String]) -> JSONValue {
+        .object([
+            "ty": .string("tm"),
+            "s": scalarProp(s.trimStart ?? .static(0), fps: fps, name: name, label: "trim start",
+                            warnings: &warnings) { $0 * 100 },
+            "e": scalarProp(s.trimEnd ?? .static(1), fps: fps, name: name, label: "trim end",
+                            warnings: &warnings) { $0 * 100 },
+            "o": scalarProp(s.trimOffset ?? .static(0), fps: fps, name: name, label: "trim offset",
+                            warnings: &warnings) { $0 * 360 },
+            "m": .int(1),
+        ])
+    }
+
     private static func identityGroupTransform() -> JSONValue {
         .object([
             "ty": .string("tr"),
@@ -215,6 +250,11 @@ public enum LottieExporter {
         case .static(let v): return staticArray(map(v))
         case .animated(let tracks):
             guard let track = tracks.first else { return staticArray([0, 0]) }
+            if hasSpring(track) {
+                return .object(["a": .int(1),
+                                "k": .array(sampled(av, track, fps: fps, name: name, label: label,
+                                                    warnings: &warnings, map: map))])
+            }
             return .object(["a": .int(1),
                             "k": .array(keyframes(track, fps: fps, name: name, label: label,
                                                   warnings: &warnings, map: map))])
@@ -228,10 +268,38 @@ public enum LottieExporter {
         case .static(let v): return .object(["a": .int(0), "k": .number(map(v))])
         case .animated(let tracks):
             guard let track = tracks.first else { return .object(["a": .int(0), "k": .number(0)]) }
+            if hasSpring(track) {
+                return .object(["a": .int(1),
+                                "k": .array(sampled(av, track, fps: fps, name: name, label: label,
+                                                    warnings: &warnings) { [map($0)] })])
+            }
             return .object(["a": .int(1),
                             "k": .array(keyframes(track, fps: fps, name: name, label: label,
                                                   warnings: &warnings) { [map($0)] })])
         }
+    }
+
+    private static func hasSpring<V>(_ track: Track<V>) -> Bool {
+        track.keyframes.contains { if case .spring = $0.interp { return true } else { return false } }
+    }
+
+    /// Springs have no Lottie equivalent, so a track containing one is sampled to dense linear
+    /// keyframes at the comp fps (export-and-format.md §4: "visually exact, file grows").
+    private static func sampled<V: Componentwise>(_ av: AnimatableValue<V>, _ track: Track<V>, fps: Double,
+                                                  name: String, label: String, warnings: inout [String],
+                                                  map: (V) -> [Double]) -> [JSONValue] {
+        let kfs = track.keyframes
+        guard let first = kfs.first, let last = kfs.last else { return [] }
+        let f0 = Int((first.t * fps).rounded()), f1 = max(Int((last.t * fps).rounded()), f0 + 1)
+        warnings.append("“\(name)” \(label) uses a spring — sampled to \(f1 - f0 + 1) keyframes at \(Int(fps))fps.")
+        var out: [JSONValue] = []
+        for f in f0...f1 {
+            let tt = Double(f) / fps
+            var k: [String: JSONValue] = ["t": .number(Double(f)), "s": JSONValue.nums(map(av.resolve(at: tt)))]
+            if f < f1 { addHandles(&k, out: ControlPoint(0, 0), inn: ControlPoint(1, 1)) } // linear between samples
+            out.append(.object(k))
+        }
+        return out
     }
 
     /// Build Lottie keyframes from a track. Each keyframe i (except the last) carries the segment's

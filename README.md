@@ -10,6 +10,17 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 25 — Lottie export (done; core scope).** A document→document bodymovin translator
+(export-and-format.md §4), not a render path — Foundation-only in `MotionKernel`, so the server
+exports too. Maps composition metadata, **shape layers** (rect/ellipse with fill/stroke/corner-
+radius), **vector paths + trim** (our in/out tangents are Lottie's `i`/`o`; trim → `tm`), **null/
+group** layers, full **animated transforms** with cubic-bezier easing, and **layer parenting**.
+**Springs** have no Lottie equivalent, so a spring track is **sampled to dense keyframes** at the
+comp fps ("visually exact, file grows"). A **compatibility lint** reports per layer exactly what
+won't survive — animated shape geometry / gradients / effects, and text/image/precomp/video (placed
+as positioned nulls so the file is always valid, never silently wrong). File ▸ Export Lottie (JSON)…
+surfaces the lint. Text/image/precomp layer *bodies* are the next follow-up. 176 tests.
+
 **Phase 24 — Tier-2 animations: stroke, trim, gradient (done).** The "wow" set from
 properties-and-commands.md §1 Tier 2.
 - **Path stroke** — vector paths stroke as well as fill: `PathStroker` ribbons each subpath at

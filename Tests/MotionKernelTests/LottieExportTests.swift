@@ -69,6 +69,43 @@ final class LottieExportTests: XCTestCase {
         XCTAssertTrue(result.warnings.contains { $0.contains("video") }, "video unsupported is surfaced")
     }
 
+    func testPathLayerExportsShapeAndTrim() throws {
+        let path = PathData(subpaths: [.init(vertices: [
+            .init(point: Vec2(0, 0)), .init(point: Vec2(100, 0)), .init(point: Vec2(100, 100)),
+        ], closed: false)])
+        let layer = Layer(id: "p", name: "Squiggle", sortKey: "a0",
+                          content: .shape(ShapeContent(geometry: .path,
+                                                       strokeColor: .static(.black), strokeWidth: .static(4),
+                                                       path: path, trimEnd: .static(0.5))))
+        let comp = Composition(id: "c", size: Vec2(200, 200), fps: 30, duration: 1, layers: [layer])
+        let doc = MotionDocument(id: "d", compositions: [comp], mainCompositionId: "c")
+        let root = try parse(try LottieExporter.export(doc, compId: "c").json)
+        let layers = try XCTUnwrap(root["layers"] as? [[String: Any]])
+        let it = try XCTUnwrap((layers[0]["shapes"] as? [[String: Any]])?.first?["it"] as? [[String: Any]])
+        XCTAssertTrue(it.contains { $0["ty"] as? String == "sh" }, "vector path → sh")
+        XCTAssertTrue(it.contains { $0["ty"] as? String == "tm" }, "trim → tm")
+        // sh vertices carry the path points.
+        let sh = try XCTUnwrap(it.first { $0["ty"] as? String == "sh" })
+        let verts = ((sh["ks"] as? [String: Any])?["k"] as? [String: Any])?["v"] as? [[Double]]
+        XCTAssertEqual(verts?.count, 3)
+    }
+
+    func testSpringSamplesToDenseKeyframes() throws {
+        let layer = Layer(id: "s", name: "Pop", sortKey: "a0",
+                          content: .shape(ShapeContent(geometry: .rect, size: .static(Vec2(50, 50)))),
+                          transform: Transform(position: .animated([Track(keyframes: [
+                              Keyframe(t: 0.0, v: Vec2(0, 0), interp: .spring(.bouncy)),
+                              Keyframe(t: 1.0, v: Vec2(200, 0)),
+                          ])])))
+        let comp = Composition(id: "c", size: Vec2(300, 300), fps: 30, duration: 1, layers: [layer])
+        let doc = MotionDocument(id: "d", compositions: [comp], mainCompositionId: "c")
+        let result = try LottieExporter.export(doc, compId: "c")
+        let layers = try XCTUnwrap(try parse(result.json)["layers"] as? [[String: Any]])
+        let pk = try XCTUnwrap(((layers[0]["ks"] as? [String: Any])?["p"] as? [String: Any])?["k"] as? [[String: Any]])
+        XCTAssertGreaterThan(pk.count, 10, "spring is densely sampled, not 2 keyframes")
+        XCTAssertTrue(result.warnings.contains { $0.lowercased().contains("spring") })
+    }
+
     func testJSONValueRoundTrips() throws {
         let v: JSONValue = .object(["n": .number(1.5), "a": .nums([1, 2]), "s": .string("x"), "b": .bool(true)])
         let back = try JSONSerialization.jsonObject(with: v.data()) as? [String: Any]
