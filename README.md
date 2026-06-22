@@ -10,6 +10,20 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 21 — correctness & the product promise (done).** Linear-space color compositing
+(sRGB-format render targets, so blends/blur/crossfades happen in linear — no dark AA fringing;
+white@50% over black is now the correct sRGB 188, not gamma 128). The **preview/export equivalence
+test** pins that the offscreen reference and the real export target (a `CVPixelBuffer`-backed
+texture) produce identical pixels. **Video now composites into exports** (MP4/ProRes/GIF/PNG), and
+**autosave + crash recovery** debounce-writes the live doc to a recovery `.motion` package, reopened
+on an unclean relaunch. 129 tests.
+
+**Phase 20 — editor authoring (done).** You can build documents by hand, not just from the demo or
+the AI: rectangle/ellipse/text **creation tools** (click-to-place or drag-to-size), **⌘D duplicate**,
+**⌘G group / ⇧⌘G ungroup**, context-aware **delete**. Text became a fully canvas-editable layer (a
+CoreText measurer gives it an intrinsic size, so it hit-tests/gizmos like any other layer). Added an
+`ArkaTests` target — the app layer's first unit coverage.
+
 **Phase 19 — vector paths + video (done).** The object set now covers the last two render gaps.
 **Vector-path shapes**: a kernel `PathData` (subpaths of cubic-bezier vertices, optional tangent
 handles) on `ShapeContent`; the renderer flattens curves and ear-clips each subpath into a fill
