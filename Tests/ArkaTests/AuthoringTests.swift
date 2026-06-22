@@ -196,5 +196,55 @@ final class AuthoringTests: XCTestCase {
         m.store.undo()
         XCTAssertEqual(m.mainComp!.layers.count, before)
     }
+
+    // MARK: Frames (multi-composition canvas)
+
+    func testAddFrameBecomesActiveAndEmpty() throws {
+        let m = freshModel()
+        let mainId = m.document.mainCompositionId
+        let frameId = try XCTUnwrap(m.addFrame(width: 800, height: 600))
+        XCTAssertEqual(m.activeCompId, frameId, "new frame is active")
+        XCTAssertNotEqual(frameId, mainId)
+        XCTAssertEqual(m.mainComp?.size, Vec2(800, 600), "editing now targets the new frame")
+        XCTAssertTrue(m.mainComp!.layers.isEmpty, "new frame starts empty")
+        XCTAssertEqual(m.frames.count, 2)
+        XCTAssertEqual(m.playback.duration, m.mainComp?.duration)
+    }
+
+    func testCreateLayerLandsInActiveFrame() throws {
+        let m = freshModel()
+        let mainId = m.document.mainCompositionId
+        let frameId = try XCTUnwrap(m.addFrame(width: 400, height: 400))
+        let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(50, 50)))
+        XCTAssertNotNil(m.document.composition(frameId)?.layer(id), "layer added to the active frame")
+        XCTAssertNil(m.document.composition(mainId)?.layer(id), "main frame untouched")
+    }
+
+    func testSetActiveFrameClearsSelection() throws {
+        let m = freshModel()
+        let mainId = m.document.mainCompositionId
+        _ = try XCTUnwrap(m.addFrame(width: 400, height: 400))
+        _ = m.createLayer(.rect, at: Vec2(50, 50)) // selects it, in the new frame
+        XCTAssertFalse(m.selection.isEmpty)
+        m.setActiveFrame(mainId)
+        XCTAssertEqual(m.activeCompId, mainId)
+        XCTAssertTrue(m.selection.isEmpty, "selection is per-frame")
+    }
+
+    func testRemoveFrameFallsBackToMain() throws {
+        let m = freshModel()
+        let mainId = m.document.mainCompositionId
+        let frameId = try XCTUnwrap(m.addFrame(width: 400, height: 400))
+        m.removeFrame(frameId)
+        XCTAssertNil(m.document.composition(frameId))
+        XCTAssertEqual(m.activeCompId, mainId, "active frame falls back to main")
+    }
+
+    func testCannotRemoveMainFrame() throws {
+        let m = freshModel()
+        let mainId = m.document.mainCompositionId
+        m.removeFrame(mainId)
+        XCTAssertNotNil(m.document.composition(mainId), "the main frame cannot be deleted")
+    }
 }
 #endif

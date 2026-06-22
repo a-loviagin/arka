@@ -18,6 +18,11 @@ final class DocumentModel {
     let store: CommandStore
     private(set) var document: MotionDocument
 
+    /// The frame (composition) currently being edited. A Figma-style "frame" is just a
+    /// `Composition`; the canvas, timeline, inspector and layer list all follow this id. Defaults to
+    /// the document's main composition; repointed by `setActiveFrame` / `addFrame`.
+    var activeCompId: EntityID
+
     /// Selected layer ids. Mirrored into the store so undo records capture/restore selection.
     var selection: Set<EntityID> = [] {
         didSet { store.selection = Selection(layerIds: selection) }
@@ -38,6 +43,7 @@ final class DocumentModel {
         let doc = DemoDocument.make()
         self.store = CommandStore(document: doc)
         self.document = doc
+        self.activeCompId = doc.mainCompositionId
         let dev = MTLCreateSystemDefaultDevice()
         self.device = dev
         self.renderer = dev.flatMap { try? MetalRenderer(device: $0) }
@@ -71,7 +77,9 @@ final class DocumentModel {
     enum Tool { case select, anchor, rect, ellipse, text }
     var tool: Tool = .select
 
-    var mainComp: Composition? { document.mainComposition }
+    /// The composition being edited (the active frame). Named `mainComp` for historical reasons; it
+    /// follows `activeCompId`, not necessarily `document.mainCompositionId`.
+    var mainComp: Composition? { document.composition(activeCompId) ?? document.mainComposition }
     func layer(_ id: EntityID) -> Layer? { mainComp?.layer(id) }
     var selectedLayer: Layer? { selection.first.flatMap { layer($0) } }
 
@@ -612,8 +620,50 @@ final class DocumentModel {
         assetBytes = bytes
         textures = cache
         assetBaseURL = url // video assets resolve relative to the package dir
+        activeCompId = doc.mainCompositionId
         playback.seek(to: 0)
         playback.duration = doc.mainComposition?.duration ?? 5
+    }
+
+    // MARK: Frames (multi-composition canvas)
+
+    /// All frames (compositions) in the document, in document order.
+    var frames: [Composition] { document.compositions }
+
+    /// Switch the active frame: the canvas/timeline/inspector retarget to `id`. Selection is
+    /// per-frame, so it's cleared, and the playback range follows the new frame's duration.
+    func setActiveFrame(_ id: EntityID) {
+        guard id != activeCompId, let comp = document.composition(id) else { return }
+        activeCompId = id
+        selection = []
+        playback.duration = comp.duration
+        playback.seek(to: min(playback.currentTime, comp.duration))
+    }
+
+    /// Create a new empty frame of `size`, make it active, and select nothing — one ⌘Z. The new
+    /// frame inherits the active frame's fps/duration so timings stay consistent across the board.
+    @discardableResult
+    func addFrame(width: Double, height: Double, name: String? = nil) -> EntityID? {
+        let template = mainComp
+        let n = frames.count + 1
+        let comp = Composition(id: ids.next("comp"), name: name ?? "Frame \(n)",
+                               size: Vec2(width, height), fps: template?.fps ?? 60,
+                               duration: template?.duration ?? 5,
+                               backgroundColor: template?.backgroundColor ?? .white, layers: [])
+        guard (try? store.perform(.addComposition(composition: comp), label: "Add \(comp.name)")) != nil
+        else { return nil }
+        setActiveFrame(comp.id)
+        return comp.id
+    }
+
+    /// Delete a frame (cannot be the main composition). If it was active, fall back to the main
+    /// frame — one ⌘Z.
+    func removeFrame(_ id: EntityID) {
+        guard id != document.mainCompositionId else { return }
+        guard let comp = document.composition(id) else { return }
+        guard (try? store.perform(.removeComposition(compId: id), label: "Delete \(comp.name)")) != nil
+        else { return }
+        if activeCompId == id { setActiveFrame(document.mainCompositionId) }
     }
 
     // MARK: Autosave / crash recovery (undo-system.md §8)

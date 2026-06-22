@@ -70,11 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let doc = model.document
+        let compId = model.activeCompId // export the frame currently being edited
         let baseURL = model.assetBaseURL // resolves video asset paths in exported frames
         DispatchQueue.global(qos: .userInitiated).async {
             guard let device = MTLCreateSystemDefaultDevice(),
                   let renderer = try? MetalRenderer(device: device),
-                  let comp = doc.mainComposition else { return }
+                  let comp = doc.composition(compId) ?? doc.mainComposition else { return }
             let cache = TextureCache(device: device)
             cache.register(id: DemoDocument.logoAssetId, cgImage: DemoDocument.makeLogoImage())
             let video = VideoFrameProvider(device: device)

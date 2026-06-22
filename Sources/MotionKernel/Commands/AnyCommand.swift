@@ -26,6 +26,10 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case setContent(layerId: EntityID, content: LayerContent)
     case setLayerBlendMode(layerId: EntityID, blendMode: BlendMode)
     case setCompositionSetting(compId: EntityID, setting: CompositionSetting)
+    /// Frames are compositions (editor-ui board): add or remove a whole composition. The main
+    /// composition can't be removed (every document keeps at least one frame).
+    case addComposition(composition: Composition)
+    case removeComposition(compId: EntityID)
     /// AI/preset macros (ai-pipeline.md §4): expand deterministically into keyframe commands on
     /// apply, via the pattern library.
     case applyPattern(layerId: EntityID, pattern: MotionPattern, params: PatternParams)
@@ -109,6 +113,11 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case .setLayerName(let layerId, _), .setContent(let layerId, _),
              .setLayerBlendMode(let layerId, _):
             _ = try locateLayer(layerId, in: doc)
+        case .addComposition(let composition):
+            if doc.composition(composition.id) != nil { throw CommandError.duplicateID(composition.id) }
+        case .removeComposition(let compId):
+            guard doc.composition(compId) != nil else { throw CommandError.compositionNotFound(compId) }
+            if compId == doc.mainCompositionId { throw CommandError.valueOutOfRange("cannot remove the main composition") }
         case .setCompositionSetting(let compId, let setting):
             guard let comp = doc.composition(compId) else { throw CommandError.compositionNotFound(compId) }
             if case .duration(let d) = setting, d <= 0 {
@@ -192,6 +201,10 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case .setLayerBlendMode(let layerId, let blendMode):
             let (ci, li) = try locateLayer(layerId, in: doc)
             doc.compositions[ci].layers[li].blendMode = blendMode
+        case .addComposition(let composition):
+            doc.compositions.append(composition)
+        case .removeComposition(let compId):
+            doc.compositions.removeAll { $0.id == compId }
         case .setCompositionSetting(let compId, let setting):
             guard let ci = doc.compositionIndex(compId) else { throw CommandError.compositionNotFound(compId) }
             switch setting {

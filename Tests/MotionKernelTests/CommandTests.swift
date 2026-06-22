@@ -179,6 +179,50 @@ final class CommandTests: XCTestCase {
         ) { XCTAssertEqual($0 as? CommandError, .effectNotFound("ghost")) }
     }
 
+    // MARK: Compositions (frames)
+
+    private func frame(_ id: EntityID = "comp_two") -> Composition {
+        Composition(id: id, name: "Frame 2", size: Vec2(800, 600), fps: 60, duration: 3, layers: [])
+    }
+
+    func testAddCompositionAppendsFrame() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.addComposition(composition: frame()), label: "Add Frame")
+        XCTAssertEqual(store.document.compositions.count, 2)
+        XCTAssertEqual(store.document.composition("comp_two")?.size, Vec2(800, 600))
+        store.undo()
+        XCTAssertNil(store.document.composition("comp_two"))
+    }
+
+    func testAddCompositionRejectsDuplicateID() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        XCTAssertThrowsError(
+            try store.perform(.addComposition(composition: frame("comp_main")), label: "Add")
+        )
+    }
+
+    func testRemoveCompositionDeletesFrame() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.addComposition(composition: frame()), label: "Add Frame")
+        try store.perform(.removeComposition(compId: "comp_two"), label: "Delete Frame")
+        XCTAssertNil(store.document.composition("comp_two"))
+        XCTAssertEqual(store.document.compositions.count, 1)
+    }
+
+    func testRemoveCompositionRejectsMainComposition() {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        XCTAssertThrowsError(
+            try store.perform(.removeComposition(compId: "comp_main"), label: "Delete")
+        )
+    }
+
+    func testCompositionCommandsRoundTripJSON() throws {
+        let cmds: [AnyCommand] = [.addComposition(composition: frame()),
+                                  .removeComposition(compId: "comp_two")]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     /// The shapes documented in MotionAI's SystemPrompt must decode + apply. If the schema drifts
     /// from the prompt, this fails — keeping the model's instructions truthful.
     func testDocumentedCommandShapesDecodeAndApply() throws {

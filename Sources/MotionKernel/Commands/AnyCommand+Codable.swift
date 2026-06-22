@@ -34,7 +34,7 @@ extension AnyCommand {
         case asset, assetId, setting, commands, label
         case visible, locked
         case pattern, params, layerIds, gap
-        case effect, effectId, content, layerName, blendMode
+        case effect, effectId, content, layerName, blendMode, composition
     }
 
     public init(from decoder: any Decoder) throws {
@@ -97,6 +97,10 @@ extension AnyCommand {
         case "SetLayerBlendMode":
             self = .setLayerBlendMode(layerId: try c.decode(EntityID.self, forKey: .layerId),
                                       blendMode: try c.decode(BlendMode.self, forKey: .blendMode))
+        case "AddComposition":
+            self = .addComposition(composition: try c.decode(Composition.self, forKey: .composition))
+        case "RemoveComposition":
+            self = .removeComposition(compId: try c.decode(EntityID.self, forKey: .compId))
         case "SetCompositionSetting":
             self = .setCompositionSetting(compId: try c.decode(EntityID.self, forKey: .compId),
                                           setting: try c.decode(CompositionSetting.self, forKey: .setting))
@@ -195,6 +199,12 @@ extension AnyCommand {
             try c.encode("SetLayerBlendMode", forKey: .type)
             try c.encode(layerId, forKey: .layerId)
             try c.encode(blendMode, forKey: .blendMode)
+        case .addComposition(let composition):
+            try c.encode("AddComposition", forKey: .type)
+            try c.encode(composition, forKey: .composition)
+        case .removeComposition(let compId):
+            try c.encode("RemoveComposition", forKey: .type)
+            try c.encode(compId, forKey: .compId)
         case .setCompositionSetting(let compId, let setting):
             try c.encode("SetCompositionSetting", forKey: .type)
             try c.encode(compId, forKey: .compId)
