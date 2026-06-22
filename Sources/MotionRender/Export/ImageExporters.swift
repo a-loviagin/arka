@@ -80,6 +80,53 @@ public enum GIFExporter {
     }
 }
 
+/// Animated WebP export (export-and-format.md §1): the modern GIF replacement — full 24-bit color
+/// plus alpha, at GIF-like ubiquity. Delays are real seconds (no centisecond quantization), so fps
+/// isn't capped. Honors transparency when requested.
+public enum WebPExporter {
+    public enum WebPError: Error { case setup, noFrame, unsupported }
+
+    /// Whether this system's ImageIO can *write* WebP (read support is universal; write isn't). The
+    /// export UI uses this to offer WebP only "where available" (export-and-format.md §1).
+    public static var isAvailable: Bool {
+        let writable = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
+        return writable.contains(UTType.webP.identifier)
+    }
+
+    public static func export(document: MotionDocument, compId: EntityID, renderer: MetalRenderer,
+                              textures: (any TextureProvider)? = nil,
+                              video: VideoFrameProvider? = nil, assetBaseURL: URL? = nil,
+                              width: Int, height: Int, fps: Double,
+                              startTime: TimeInterval, endTime: TimeInterval,
+                              transparent: Bool = false,
+                              to url: URL, progress: ((Double) -> Void)? = nil) throws {
+        guard let src = frameSource(document, compId, renderer, textures, width: width, height: height,
+                                    transparent: transparent, video: video, assetBaseURL: assetBaseURL)
+        else { throw WebPError.setup }
+        let webpType = UTType.webP.identifier as CFString
+        let safeFps = max(fps, 1)
+        let duration = max(endTime - startTime, 1 / safeFps)
+        let frameCount = max(Int((duration * safeFps).rounded()), 1)
+        let delay = 1.0 / safeFps
+
+        try? FileManager.default.removeItem(at: url)
+        let fileProps = [kCGImagePropertyWebPDictionary as String:
+                            [kCGImagePropertyWebPLoopCount as String: 0]] as CFDictionary
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, webpType, frameCount, fileProps) else {
+            throw WebPError.unsupported // no WebP encoder on this system
+        }
+        let frameProps = [kCGImagePropertyWebPDictionary as String:
+                            [kCGImagePropertyWebPDelayTime as String: delay]] as CFDictionary
+        for i in 0..<frameCount {
+            let t = startTime + Double(i) / safeFps
+            guard let cg = src.image(at: t)?.cgImage() else { throw WebPError.noFrame }
+            CGImageDestinationAddImage(dest, cg, frameProps)
+            progress?(Double(i + 1) / Double(frameCount))
+        }
+        guard CGImageDestinationFinalize(dest) else { throw WebPError.setup }
+    }
+}
+
 /// PNG image-sequence export (export-and-format.md §1): zero-padded numbered frames into a folder.
 public enum ImageSequenceExporter {
     public enum SequenceError: Error { case setup, noFrame }

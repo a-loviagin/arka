@@ -102,6 +102,24 @@ final class ExportTests: XCTestCase {
         XCTAssertGreaterThan(r, 150); XCTAssertLessThan(g, 110); XCTAssertLessThan(b, 110)
     }
 
+    func testExportsAnimatedWebP() throws {
+        let doc = redSquareDoc()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("arka_webp_\(UInt32.random(in: 0 ..< .max)).webp")
+        defer { try? FileManager.default.removeItem(at: url) }
+        do {
+            try WebPExporter.export(document: doc, compId: "comp_main", renderer: renderer,
+                                    width: 64, height: 48, fps: 20, startTime: 0, endTime: 0.3, to: url)
+        } catch WebPExporter.WebPError.unsupported {
+            throw XCTSkip("No WebP encoder on this system")
+        }
+        let src = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        XCTAssertEqual(CGImageSourceGetCount(src), 6, "0.3s @ 20fps = 6 frames")
+        let frame = try XCTUnwrap(CGImageSourceCreateImageAtIndex(src, 0, nil))
+        let (r, g, b) = centerPixel(frame)
+        XCTAssertGreaterThan(r, 150); XCTAssertLessThan(g, 110); XCTAssertLessThan(b, 110)
+    }
+
     func testExportsPNGSequence() throws {
         let doc = redSquareDoc()
         let dir = FileManager.default.temporaryDirectory
