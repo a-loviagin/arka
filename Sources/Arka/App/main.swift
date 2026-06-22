@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
 
+        model.runExport = { [weak self] settings in self?.runExportJob(settings) }
         buildMainMenu(target: self)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -60,18 +61,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do { try model.open(url) } catch { presentError(error) }
     }
 
-    /// Shared export plumbing: prompt for a destination, then run `work` off the main thread
-    /// (building its own renderer so nothing non-Sendable is captured), revealing the result.
-    private func runExport(suggestedName: String, contentTypes: [UTType],
-                           _ work: @escaping @Sendable (MotionDocument, MetalRenderer, TextureCache, VideoFrameProvider, URL?, Composition, URL) throws -> Void) {
+    /// Open the preset-first export sheet (export-and-format.md §3).
+    @objc func showExportSheet(_ sender: Any?) { model.exportSheetVisible = true }
+
+    /// Run one export job from the sheet's settings: prompt for a destination, then render off the
+    /// main thread (building its own renderer so nothing non-Sendable is captured) and reveal it.
+    func runExportJob(_ settings: ExportSettings) {
         let panel = NSSavePanel()
-        if !contentTypes.isEmpty { panel.allowedContentTypes = contentTypes }
-        panel.nameFieldStringValue = suggestedName
+        if !settings.format.contentTypes.isEmpty { panel.allowedContentTypes = settings.format.contentTypes }
+        panel.nameFieldStringValue = settings.format.suggestedName
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let doc = model.document
-        let compId = model.activeCompId // export the frame currently being edited
-        let baseURL = model.assetBaseURL // resolves video asset paths in exported frames
+        let compId = model.activeCompId
+        let baseURL = model.assetBaseURL
         DispatchQueue.global(qos: .userInitiated).async {
             guard let device = MTLCreateSystemDefaultDevice(),
                   let renderer = try? MetalRenderer(device: device),
@@ -79,8 +82,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let cache = TextureCache(device: device)
             cache.register(id: DemoDocument.logoAssetId, cgImage: DemoDocument.makeLogoImage())
             let video = VideoFrameProvider(device: device)
+            let w = max(Int(comp.size.x * settings.scale), 1)
+            let h = max(Int(comp.size.y * settings.scale), 1)
+            let fps = max(settings.fps, 1)
             do {
-                try work(doc, renderer, cache, video, baseURL, comp, url)
+                switch settings.format {
+                case .mp4, .proRes:
+                    let codec: VideoExporter.Settings.Codec = settings.format == .proRes ? .proRes4444 : .h264
+                    let vs = VideoExporter.Settings(width: w, height: h, fps: fps, startTime: 0,
+                                                    endTime: comp.duration, codec: codec,
+                                                    transparentBackground: settings.format == .proRes && settings.transparent)
+                    try VideoExporter(renderer: renderer, textures: cache, video: video, assetBaseURL: baseURL)
+                        .export(document: doc, compId: comp.id, settings: vs, to: url)
+                case .gif:
+                    try GIFExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                           video: video, assetBaseURL: baseURL, width: w, height: h, fps: fps,
+                                           startTime: 0, endTime: comp.duration, to: url)
+                case .webP:
+                    try WebPExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                            video: video, assetBaseURL: baseURL, width: w, height: h, fps: fps,
+                                            startTime: 0, endTime: comp.duration, transparent: settings.transparent, to: url)
+                case .pngSequence:
+                    try ImageSequenceExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                                     video: video, assetBaseURL: baseURL, width: w, height: h, fps: fps,
+                                                     startTime: 0, endTime: comp.duration, transparent: settings.transparent, to: url)
+                }
                 DispatchQueue.main.async { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             } catch {
                 let message = error.localizedDescription
@@ -89,38 +115,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     alert.informativeText = message; alert.runModal()
                 }
             }
-        }
-    }
-
-    @objc func exportMovie(_ sender: Any?) {
-        runExport(suggestedName: "arka.mp4", contentTypes: [.mpeg4Movie]) { doc, renderer, cache, video, baseURL, comp, url in
-            try VideoExporter(renderer: renderer, textures: cache, video: video, assetBaseURL: baseURL)
-                .export(document: doc, compId: comp.id, settings: .standard(for: comp), to: url)
-        }
-    }
-
-    @objc func exportProRes(_ sender: Any?) {
-        runExport(suggestedName: "arka.mov", contentTypes: [.quickTimeMovie]) { doc, renderer, cache, video, baseURL, comp, url in
-            try VideoExporter(renderer: renderer, textures: cache, video: video, assetBaseURL: baseURL)
-                .export(document: doc, compId: comp.id, settings: .proResAlpha(for: comp), to: url)
-        }
-    }
-
-    @objc func exportGIF(_ sender: Any?) {
-        runExport(suggestedName: "arka.gif", contentTypes: [.gif]) { doc, renderer, cache, video, baseURL, comp, url in
-            try GIFExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
-                                   video: video, assetBaseURL: baseURL,
-                                   width: Int(comp.size.x), height: Int(comp.size.y), fps: 25,
-                                   startTime: 0, endTime: comp.duration, to: url)
-        }
-    }
-
-    @objc func exportPNGSequence(_ sender: Any?) {
-        runExport(suggestedName: "arka-frames", contentTypes: []) { doc, renderer, cache, video, baseURL, comp, url in
-            try ImageSequenceExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
-                                             video: video, assetBaseURL: baseURL,
-                                             width: Int(comp.size.x), height: Int(comp.size.y), fps: comp.fps,
-                                             startTime: 0, endTime: comp.duration, transparent: true, to: url)
         }
     }
 
@@ -212,10 +206,7 @@ func buildMainMenu(target: AppDelegate) {
     add("Open…", #selector(AppDelegate.openPackage(_:)), "o")
     add("Save Package…", #selector(AppDelegate.savePackage(_:)), "s")
     fileMenu.addItem(.separator())
-    add("Export Movie…", #selector(AppDelegate.exportMovie(_:)), "e")
-    add("Export ProRes (Alpha)…", #selector(AppDelegate.exportProRes(_:)), "")
-    add("Export GIF…", #selector(AppDelegate.exportGIF(_:)), "")
-    add("Export PNG Sequence…", #selector(AppDelegate.exportPNGSequence(_:)), "")
+    add("Export…", #selector(AppDelegate.showExportSheet(_:)), "e")
     add("Export Lottie (JSON)…", #selector(AppDelegate.exportLottie(_:)), "")
     fileItem.submenu = fileMenu
 

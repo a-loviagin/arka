@@ -36,6 +36,10 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.aiPanelVisible)
+        .sheet(isPresented: Binding(get: { model.exportSheetVisible },
+                                    set: { model.exportSheetVisible = $0 })) {
+            ExportSheet(model: model)
+        }
     }
 
     private var transportBar: some View {

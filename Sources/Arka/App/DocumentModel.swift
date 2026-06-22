@@ -79,6 +79,11 @@ final class DocumentModel {
 
     /// The composition being edited (the active frame). Named `mainComp` for historical reasons; it
     /// follows `activeCompId`, not necessarily `document.mainCompositionId`.
+    /// Export sheet (export-and-format.md §3): visibility + the AppDelegate-provided job runner
+    /// (save panel + off-main render). nil until the app wires it at launch.
+    var exportSheetVisible = false
+    var runExport: ((ExportSettings) -> Void)?
+
     var mainComp: Composition? { document.composition(activeCompId) ?? document.mainComposition }
     func layer(_ id: EntityID) -> Layer? { mainComp?.layer(id) }
     var selectedLayer: Layer? { selection.first.flatMap { layer($0) } }
