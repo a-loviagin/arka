@@ -10,6 +10,18 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 27 — AI quality & evals (in progress).** Learning from examples without fine-tuning:
+exemplars become *data the model reads* (retrieval-augmented few-shot), the pattern library is the
+editable vocabulary, and an eval harness gates every prompt/example change. Because the AI emits
+`AnyCommand` lists (the human write path), generated projects are **fully editable by construction**.
+- **Slice 1 (done)** — the **eval harness** (`MotionAI.EvalHarness`), built before the feature
+  (ai-pipeline.md §8). A scenario is a start document + prompt with layered checks: layer 1
+  (validity — runs the real validate/repair pipeline) and layer 2 (structural — `producesAnimation`,
+  `minLayers`, `layerAnimated`, `keyframesInRange`, …). Foundation-only, runs offline against the
+  deterministic `HeuristicGenerator` baseline in CI; pass any `MotionGenerator` to eval a live model.
+- Next: an exemplar library + retrieval + few-shot injection; then asset analysis + canvas-snapshot
+  grounding. 186 tests.
+
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence
 — WebP offered only where the system encoder exists), the few settings that matter per format (scale
