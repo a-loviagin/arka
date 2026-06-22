@@ -106,6 +106,56 @@ final class LottieExportTests: XCTestCase {
         XCTAssertTrue(result.warnings.contains { $0.lowercased().contains("spring") })
     }
 
+    func testPrecompLayerEmitsAssetAndRef() throws {
+        let inner = Composition(id: "inner", name: "Inner", size: Vec2(200, 150), fps: 30, duration: 1,
+                                layers: [Layer(id: "ir", name: "r", sortKey: "a0",
+                                               content: .shape(ShapeContent(geometry: .rect)))])
+        let pcLayer = Layer(id: "pc", name: "Nested", sortKey: "a0", content: .precomp(PrecompContent(compositionId: "inner")))
+        let main = Composition(id: "c", size: Vec2(640, 480), fps: 30, duration: 2, layers: [pcLayer])
+        let doc = MotionDocument(id: "d", compositions: [main, inner], mainCompositionId: "c")
+        let root = try parse(try LottieExporter.export(doc, compId: "c").json)
+        let layers = try XCTUnwrap(root["layers"] as? [[String: Any]])
+        XCTAssertEqual(layers[0]["ty"] as? Int, 0, "precomp layer")
+        XCTAssertEqual(layers[0]["refId"] as? String, "comp_inner")
+        XCTAssertEqual(layers[0]["w"] as? Double, 200)
+        let assets = try XCTUnwrap(root["assets"] as? [[String: Any]])
+        let asset = try XCTUnwrap(assets.first { $0["id"] as? String == "comp_inner" })
+        XCTAssertNotNil(asset["layers"] as? [[String: Any]], "precomp asset carries the sub-comp layers")
+    }
+
+    func testTextLayerEmitsDocumentAndFont() throws {
+        let text = Layer(id: "t", name: "Title", sortKey: "a0",
+                         content: .text(TextContent(string: "Hello", fontFamily: "Georgia",
+                                                     fontSize: .static(48), alignment: .center)))
+        let comp = Composition(id: "c", size: Vec2(400, 200), fps: 30, duration: 1, layers: [text])
+        let doc = MotionDocument(id: "d", compositions: [comp], mainCompositionId: "c")
+        let root = try parse(try LottieExporter.export(doc, compId: "c").json)
+        let layers = try XCTUnwrap(root["layers"] as? [[String: Any]])
+        XCTAssertEqual(layers[0]["ty"] as? Int, 5, "text layer")
+        let s = try XCTUnwrap((((layers[0]["t"] as? [String: Any])?["d"] as? [String: Any])?["k"] as? [[String: Any]])?.first?["s"] as? [String: Any])
+        XCTAssertEqual(s["t"] as? String, "Hello")
+        XCTAssertEqual(s["j"] as? Int, 2, "center justification")
+        let fonts = try XCTUnwrap((root["fonts"] as? [String: Any])?["list"] as? [[String: Any]])
+        XCTAssertTrue(fonts.contains { $0["fName"] as? String == "Georgia" })
+    }
+
+    func testImageLayerEmbedsBase64WhenDataProvided() throws {
+        let asset = Asset(id: "a1", type: .image, path: "assets/logo.png", pixelSize: Vec2(64, 64))
+        let img = Layer(id: "im", name: "Logo", sortKey: "a0", content: .image(ImageContent(assetId: "a1")))
+        let comp = Composition(id: "c", size: Vec2(200, 200), fps: 30, duration: 1, layers: [img])
+        var doc = MotionDocument(id: "d", compositions: [comp], mainCompositionId: "c")
+        doc.assets = [asset]
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47]) // "PNG" magic-ish stub
+        let root = try parse(try LottieExporter.export(doc, compId: "c", assetData: ["assets/logo.png": bytes]).json)
+        let layers = try XCTUnwrap(root["layers"] as? [[String: Any]])
+        XCTAssertEqual(layers[0]["ty"] as? Int, 2, "image layer")
+        XCTAssertEqual(layers[0]["refId"] as? String, "image_a1")
+        let assets = try XCTUnwrap(root["assets"] as? [[String: Any]])
+        let entry = try XCTUnwrap(assets.first { $0["id"] as? String == "image_a1" })
+        XCTAssertEqual(entry["e"] as? Int, 1, "embedded")
+        XCTAssertTrue((entry["p"] as? String)?.hasPrefix("data:image/png;base64,") ?? false)
+    }
+
     func testJSONValueRoundTrips() throws {
         let v: JSONValue = .object(["n": .number(1.5), "a": .nums([1, 2]), "s": .string("x"), "b": .bool(true)])
         let back = try JSONSerialization.jsonObject(with: v.data()) as? [String: Any]

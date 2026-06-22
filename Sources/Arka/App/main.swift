@@ -132,7 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.nameFieldStringValue = "arka.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let result = try LottieExporter.export(model.document, compId: model.activeCompId)
+            let result = try LottieExporter.export(model.document, compId: model.activeCompId,
+                                                   assetData: model.assetBytes)
             try result.json.write(to: url)
             if result.warnings.isEmpty {
                 NSWorkspace.shared.activateFileViewerSelecting([url])

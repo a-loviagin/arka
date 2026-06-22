@@ -17,9 +17,11 @@ radius), **vector paths + trim** (our in/out tangents are Lottie's `i`/`o`; trim
 group** layers, full **animated transforms** with cubic-bezier easing, and **layer parenting**.
 **Springs** have no Lottie equivalent, so a spring track is **sampled to dense keyframes** at the
 comp fps ("visually exact, file grows"). A **compatibility lint** reports per layer exactly what
-won't survive — animated shape geometry / gradients / effects, and text/image/precomp/video (placed
-as positioned nulls so the file is always valid, never silently wrong). File ▸ Export Lottie (JSON)…
-surfaces the lint. Text/image/precomp layer *bodies* are the next follow-up. 176 tests.
+won't survive — animated shape geometry / gradients / effects, and video (placed as positioned nulls
+so the file is always valid, never silently wrong). Also translates **precomp** layers (recursive,
+cycle-guarded, into the Lottie `assets` array), **image** layers (embedded as a self-contained
+base64 data URI when the bytes are available), and **text** layers (Lottie text document + `fonts`
+list). File ▸ Export Lottie (JSON)… surfaces the lint. 179 tests.
 
 **Phase 24 — Tier-2 animations: stroke, trim, gradient (done).** The "wow" set from
 properties-and-commands.md §1 Tier 2.
