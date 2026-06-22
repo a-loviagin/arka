@@ -617,6 +617,11 @@ struct InspectorView: View {
             HStack {
                 keyButton(layer.id, .opacity)
                 Text(String(format: "Opacity  %.0f%%", layer.transform.opacity.resolve(at: t) * 100)).font(.caption)
+                Spacer()
+                Picker("", selection: Binding(get: { layer.blendMode },
+                                              set: { model.setBlendMode(layer.id, $0) })) {
+                    ForEach(BlendMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }.labelsHidden().frame(width: 104).help("Blend mode")
             }
             Slider(value: Binding(
                 get: { layer.transform.opacity.resolve(at: model.playback.currentTime) },

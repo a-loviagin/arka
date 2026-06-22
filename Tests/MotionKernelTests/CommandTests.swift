@@ -211,6 +211,7 @@ final class CommandTests: XCTestCase {
     func testStructuralCommandsRoundTripJSON() throws {
         let cmds: [AnyCommand] = [
             .setLayerName(layerId: "layer_logo", name: "Hero"),
+            .setLayerBlendMode(layerId: "layer_logo", blendMode: .multiply),
             .setContent(layerId: "layer_logo", content: .text(TextContent(
                 string: "Hi", fontFamily: "Georgia", fontSize: .static(40),
                 fillColor: .static(.white), alignment: .center))),

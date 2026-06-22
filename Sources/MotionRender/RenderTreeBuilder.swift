@@ -78,11 +78,11 @@ public struct RenderTreeBuilder {
                     let fill = SIMD4<Float>(shape.fillColor?.resolve(at: t) ?? .clear)
                     guard let p = shape.path, let mesh = PathTessellator.mesh(p, fill: fill) else { continue }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,
-                                                  content: .path(mesh), effects: effects)))
+                                                  content: .path(mesh), effects: effects, blendMode: layer.blendMode)))
                 } else {
                     guard let resolved = resolveShape(shape, at: t) else { continue }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,
-                                                  content: .shape(resolved), effects: effects)))
+                                                  content: .shape(resolved), effects: effects, blendMode: layer.blendMode)))
                 }
             case .text(let text):
                 guard let engine = textEngine else { continue }
@@ -92,7 +92,7 @@ public struct RenderTreeBuilder {
                 guard let run = engine.run(for: text, fontSize: fontSize,
                                            tracking: tracking, fill: fill) else { continue }
                 nodes.append(.leaf(RenderItem(world: world, opacity: rel,
-                                              content: .glyphRun(run), effects: effects)))
+                                              content: .glyphRun(run), effects: effects, blendMode: layer.blendMode)))
             case .image(let image):
                 guard let texture = textures?.texture(forAssetId: image.assetId) else { continue }
                 let size = document.asset(image.assetId)?.pixelSize ?? Vec2(Double(texture.width),
@@ -101,7 +101,7 @@ public struct RenderTreeBuilder {
                                               content: .image(ImageQuad(
                                                 texture: texture,
                                                 size: SIMD2<Float>(Float(size.x), Float(size.y)))),
-                                              effects: effects)))
+                                              effects: effects, blendMode: layer.blendMode)))
             case .precomp(let pre):
                 guard !visiting.contains(compId),
                       let sub = document.composition(pre.compositionId) else { continue }
@@ -121,7 +121,7 @@ public struct RenderTreeBuilder {
                                               content: .image(ImageQuad(
                                                 texture: texture,
                                                 size: SIMD2<Float>(Float(size.x), Float(size.y)))),
-                                              effects: effects)))
+                                              effects: effects, blendMode: layer.blendMode)))
             case .group, .null:
                 let kids = childrenOf[layer.id] ?? []
                 guard !kids.isEmpty else { continue }
@@ -133,7 +133,8 @@ public struct RenderTreeBuilder {
                                                   evById: evById, childrenOf: childrenOf,
                                                   enclosingIso: ev.opacity)
                     if !childNodes.isEmpty {
-                        nodes.append(.group(GroupNode(opacity: rel, effects: effects, children: childNodes)))
+                        nodes.append(.group(GroupNode(opacity: rel, effects: effects,
+                                                      children: childNodes, blendMode: layer.blendMode)))
                     }
                 } else {
                     // Transparent passthrough: children render inline at this level.

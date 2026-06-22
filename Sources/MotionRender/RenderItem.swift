@@ -20,6 +20,7 @@ public struct GroupNode {
     var opacity: Float
     var effects: [ResolvedEffect]
     var children: [RenderNode]
+    var blendMode: BlendMode = .normal
 }
 
 /// A nested composition resolved for rendering. Its `children` are the sub-comp's RenderTree (in
@@ -44,6 +45,9 @@ public struct RenderItem {
     /// Effects applied to this layer's rasterized result, in order. A non-empty list forces the
     /// layer through an intermediate texture (render-engine.md §3).
     var effects: [ResolvedEffect] = []
+    /// How this layer composites onto the backdrop. Non-normal forces an intermediate, then a
+    /// blend-mode composite (render-engine.md §3).
+    var blendMode: BlendMode = .normal
 }
 
 /// An effect resolved to concrete values at one time (render-engine.md §3, properties §1 Tier 2).

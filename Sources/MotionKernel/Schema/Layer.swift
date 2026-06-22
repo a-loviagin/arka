@@ -1,5 +1,11 @@
 import Foundation
 
+/// How a layer composites onto what's beneath it (render-engine.md §3). v1 supports the modes
+/// expressible as premultiplied fixed-function blends; more (overlay, darken, …) need a backdrop pass.
+public enum BlendMode: String, Codable, Sendable, Equatable, CaseIterable {
+    case normal, multiply, screen, add, lighten
+}
+
 /// A layer in a composition (motion-document-schema.md §3).
 ///
 /// Grouping is **flat** — prefer a single layer array + `parentId` over nested arrays. Flat lists
@@ -19,6 +25,7 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
     public var transform: Transform
     public var content: LayerContent
     public var effects: [Effect]
+    public var blendMode: BlendMode
 
     public init(id: EntityID, name: String, sortKey: SortKey,
                 content: LayerContent,
@@ -26,7 +33,8 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
                 visible: Bool = true, locked: Bool = false,
                 inPoint: TimeInterval = 0, outPoint: TimeInterval = .infinity,
                 transform: Transform = Transform(),
-                effects: [Effect] = []) {
+                effects: [Effect] = [],
+                blendMode: BlendMode = .normal) {
         self.id = id
         self.name = name
         self.sortKey = sortKey
@@ -38,10 +46,11 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
         self.outPoint = outPoint
         self.transform = transform
         self.effects = effects
+        self.blendMode = blendMode
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, parentId, sortKey, visible, locked, inPoint, outPoint, transform, content, effects
+        case id, name, parentId, sortKey, visible, locked, inPoint, outPoint, transform, content, effects, blendMode
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -56,6 +65,7 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
         transform = try c.decodeIfPresent(Transform.self, forKey: .transform) ?? Transform()
         content = try c.decode(LayerContent.self, forKey: .content)
         effects = try c.decodeIfPresent([Effect].self, forKey: .effects) ?? []
+        blendMode = try c.decodeIfPresent(BlendMode.self, forKey: .blendMode) ?? .normal
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -70,5 +80,6 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
         try c.encode(transform, forKey: .transform)
         try c.encode(content, forKey: .content)
         if !effects.isEmpty { try c.encode(effects, forKey: .effects) }
+        if blendMode != .normal { try c.encode(blendMode, forKey: .blendMode) }
     }
 }

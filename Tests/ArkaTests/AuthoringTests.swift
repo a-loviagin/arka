@@ -156,6 +156,16 @@ final class AuthoringTests: XCTestCase {
         XCTAssertTrue(s3.fillColor?.isAnimated ?? false, "keyframe toggle animates fill")
     }
 
+    func testSetBlendMode() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))
+        XCTAssertEqual(m.layer(id)?.blendMode, .normal)
+        m.setBlendMode(id, .multiply)
+        XCTAssertEqual(m.layer(id)?.blendMode, .multiply)
+        m.store.undo()
+        XCTAssertEqual(m.layer(id)?.blendMode, .normal)
+    }
+
     func testAutosaveSessionRoundTrips() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("arka_rec_\(UInt32.random(in: 0..<UInt32.max)).motion")

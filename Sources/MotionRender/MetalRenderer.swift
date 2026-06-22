@@ -3,6 +3,7 @@ import Foundation
 import Metal
 import QuartzCore
 import simd
+import MotionKernel
 
 /// Per-instance SDF shape data. **Layout must match `InstanceUniform` in Shaders.swift exactly.**
 struct InstanceUniform {
@@ -49,6 +50,8 @@ public final class MetalRenderer {
     private let imagePipeline: MTLRenderPipelineState
     private let blurPipeline: MTLRenderPipelineState
     private let compositePipeline: MTLRenderPipelineState
+    /// Composite pipelines for non-normal blend modes (same shader, different fixed-function blend).
+    private let blendPipelines: [BlendMode: MTLRenderPipelineState]
     private let sampler: MTLSamplerState
     private let pool: IntermediatePool
 
@@ -62,6 +65,7 @@ public final class MetalRenderer {
     private struct CompositeOp {
         var texture: MTLTexture; var offsetNDC: SIMD2<Float>
         var tint: SIMD4<Float>; var opacity: Float; var mode: UInt32
+        var blend: BlendMode = .normal
     }
 
     public enum SetupError: Error { case noQueue, noLibrary }
@@ -96,6 +100,31 @@ public final class MetalRenderer {
         self.imagePipeline = try pipeline("glyph_vertex", "image_fragment")
         self.blurPipeline = try pipeline("fullscreen_vertex", "blur_fragment", blend: false)
         self.compositePipeline = try pipeline("composite_vertex", "composite_fragment")
+
+        // Premultiplied blend states for the non-normal modes (render-engine.md §3). The source is a
+        // premultiplied intermediate, so transparent areas (rgb=a=0) leave the backdrop untouched.
+        func blendComposite(_ srcRGB: MTLBlendFactor, _ dstRGB: MTLBlendFactor,
+                            _ op: MTLBlendOperation) throws -> MTLRenderPipelineState {
+            let desc = MTLRenderPipelineDescriptor()
+            desc.vertexFunction = library.makeFunction(name: "composite_vertex")
+            desc.fragmentFunction = library.makeFunction(name: "composite_fragment")
+            let c = desc.colorAttachments[0]!
+            c.pixelFormat = .bgra8Unorm_srgb
+            c.isBlendingEnabled = true
+            c.rgbBlendOperation = op
+            c.alphaBlendOperation = .add
+            c.sourceRGBBlendFactor = srcRGB
+            c.sourceAlphaBlendFactor = .one
+            c.destinationRGBBlendFactor = dstRGB
+            c.destinationAlphaBlendFactor = .oneMinusSourceAlpha
+            return try device.makeRenderPipelineState(descriptor: desc)
+        }
+        self.blendPipelines = [
+            .multiply: try blendComposite(.destinationColor, .oneMinusSourceAlpha, .add),
+            .screen: try blendComposite(.oneMinusDestinationColor, .one, .add),
+            .add: try blendComposite(.one, .one, .add),
+            .lighten: try blendComposite(.one, .one, .max),
+        ]
 
         let sdesc = MTLSamplerDescriptor()
         sdesc.minFilter = .linear
@@ -195,7 +224,7 @@ public final class MetalRenderer {
     /// A node whose precomp/group subtree has been rasterized into a texture.
     private enum ResolvedNode {
         case item(RenderItem)
-        case group(texture: MTLTexture, opacity: Float, effects: [ResolvedEffect])
+        case group(texture: MTLTexture, opacity: Float, effects: [ResolvedEffect], blend: BlendMode)
     }
 
     /// Depth-first resolve: a precomp renders its comp into a `compSize` texture, becoming an image
@@ -224,7 +253,7 @@ public final class MetalRenderer {
                 guard let tex = pool.acquire(width: w, height: h) else { continue }
                 let sub = resolveTree(g.children, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
                 encodeMain(sub, proj: proj, clear: SIMD4<Double>(0, 0, 0, 0), target: tex, cmd: cmd, transient: &transient)
-                out.append(.group(texture: tex, opacity: g.opacity, effects: g.effects))
+                out.append(.group(texture: tex, opacity: g.opacity, effects: g.effects, blend: g.blendMode))
             }
         }
         return out
@@ -240,14 +269,15 @@ public final class MetalRenderer {
         var composites: [Int: [CompositeOp]] = [:]
         for (i, node) in nodes.enumerated() {
             switch node {
-            case .item(let item) where !item.effects.isEmpty:
+            case .item(let item) where !item.effects.isEmpty || item.blendMode != .normal:
                 if let content = renderContent(item, proj: proj, w: w, h: h, cmd: cmd, transient: &transient) {
                     composites[i] = effectComposites(content: content, opacity: item.opacity,
-                                                     effects: item.effects, proj: proj, w: w, h: h, cmd: cmd)
+                                                     effects: item.effects, blend: item.blendMode,
+                                                     proj: proj, w: w, h: h, cmd: cmd)
                 }
-            case .group(let tex, let opacity, let effects):
+            case .group(let tex, let opacity, let effects, let blend):
                 composites[i] = effectComposites(content: tex, opacity: opacity,
-                                                 effects: effects, proj: proj, w: w, h: h, cmd: cmd)
+                                                 effects: effects, blend: blend, proj: proj, w: w, h: h, cmd: cmd)
             default:
                 break
             }
@@ -326,22 +356,24 @@ public final class MetalRenderer {
     /// behind) then the content (blurred if a blur effect is present), faded by `opacity`. Shared by
     /// effected leaves and isolation groups.
     private func effectComposites(content: MTLTexture, opacity: Float, effects: [ResolvedEffect],
-                                  proj: simd_float3x3, w: Int, h: Int, cmd: MTLCommandBuffer) -> [CompositeOp] {
+                                  blend: BlendMode, proj: simd_float3x3, w: Int, h: Int,
+                                  cmd: MTLCommandBuffer) -> [CompositeOp] {
         var ops: [CompositeOp] = []
         for fx in effects {
             if case .shadow(let offset, let radius, let color, let shOpacity) = fx {
                 let blurred = blur(content, radius: radius, w: w, h: h, cmd: cmd)
                 let offNDC = SIMD2<Float>(offset.x * proj.columns.0.x, offset.y * proj.columns.1.y)
                 ops.append(CompositeOp(texture: blurred, offsetNDC: offNDC, tint: color,
-                                       opacity: shOpacity * opacity, mode: 1))
+                                       opacity: shOpacity * opacity, mode: 1)) // shadow always over
             }
         }
         var result = content
         for fx in effects {
             if case .blur(let radius) = fx { result = blur(result, radius: radius, w: w, h: h, cmd: cmd) }
         }
+        // The layer's own composite carries its blend mode (the shadows behind it stay normal).
         ops.append(CompositeOp(texture: result, offsetNDC: .zero, tint: SIMD4<Float>(1, 1, 1, 1),
-                               opacity: opacity, mode: 0))
+                               opacity: opacity, mode: 0, blend: blend))
         return ops
     }
 
@@ -433,7 +465,7 @@ public final class MetalRenderer {
 
     private func drawComposite(_ enc: MTLRenderCommandEncoder, _ c: CompositeOp) {
         var p = CompositeParams(offsetNDC: c.offsetNDC, tint: c.tint, opacity: c.opacity, mode: c.mode)
-        enc.setRenderPipelineState(compositePipeline)
+        enc.setRenderPipelineState(blendPipelines[c.blend] ?? compositePipeline) // normal → over
         enc.setVertexBytes(&p, length: MemoryLayout<CompositeParams>.stride, index: 0)
         enc.setFragmentBytes(&p, length: MemoryLayout<CompositeParams>.stride, index: 0)
         enc.setFragmentTexture(c.texture, index: 0)

@@ -218,6 +218,11 @@ final class DocumentModel {
         try? store.perform(.setContent(layerId: id, content: .text(tc)), label: "Edit Text")
     }
 
+    func setBlendMode(_ id: EntityID, _ mode: BlendMode) {
+        guard layer(id)?.blendMode != mode else { return }
+        try? store.perform(.setLayerBlendMode(layerId: id, blendMode: mode), label: "Blend Mode")
+    }
+
     func setImageFit(_ id: EntityID, _ fit: FitMode) {
         guard case .image(var ic)? = layer(id)?.content, ic.fit != fit else { return }
         ic.fit = fit
