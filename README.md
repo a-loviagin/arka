@@ -10,6 +10,15 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 26 — export UI + WebP (in progress).** A preset-first **export sheet** (export-and-format.md
+§3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence — WebP
+offered only where the system encoder exists), the few settings that matter per format (scale
+25–200% with a live px readout, fps with a per-format cap, transparent-background toggle for
+alpha-capable formats), a live size estimate, and a frame-count/duration readout. One off-main
+render path keyed by format honors scale + fps. New **animated WebP** exporter (`WebPExporter`,
+gated by `isAvailable`) — the modern GIF replacement. Remaining: GIF craft (per-scene OKLab palettes
++ dithering). 180 tests.
+
 **Phase 25 — Lottie export (done; core scope).** A document→document bodymovin translator
 (export-and-format.md §4), not a render path — Foundation-only in `MotionKernel`, so the server
 exports too. Maps composition metadata, **shape layers** (rect/ellipse with fill/stroke/corner-
