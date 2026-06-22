@@ -19,11 +19,11 @@ the layer type, every field reading the resolved value at the playhead and writi
 - **Shape** — W/H size, fill & stroke color wells, stroke width, corner radius.
 - **Text** — editable string / font / alignment, size, tracking, **line height** (multi-line),
   fill.
-- **Effects** — add/tweak/remove blur & shadow.
+- **Effects** — add/tweak/remove blur, shadow, and **background blur** (frosted glass: blurs the
+  composited backdrop within the layer via an encoder-segmented snapshot+blur+masked composite).
 - Layer **rename**, image **fit mode**.
 New kernel commands: `SetLayerName`, `SetContent`, `SetLayerBlendMode`; generic auto-keyframing
-property bindings; `Layer.blendMode` + `TextContent.lineHeight`. 136 tests. (Deferred: background
-blur — needs a backdrop-sampling render pass.)
+property bindings; `Layer.blendMode` + `TextContent.lineHeight`. 137 tests.
 
 **Phase 21 — correctness & the product promise (done).** Linear-space color compositing
 (sRGB-format render targets, so blends/blur/crossfades happen in linear — no dark AA fringing;
