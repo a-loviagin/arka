@@ -12,12 +12,15 @@ private struct FrameSource {
     let renderer: MetalRenderer
     let textEngine: TextEngine?
     let textures: (any TextureProvider)?
+    let video: VideoFrameProvider?
+    let assetBaseURL: URL?
     let comp: Composition
     let pixelSize: (width: Int, height: Int)
     let clear: SIMD4<Double>
 
     func image(at t: TimeInterval) -> PixelImage? {
-        let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures)
+        let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures,
+                                      video: video, assetBaseURL: assetBaseURL)
             .build(compId: compId, at: t)
         return renderer.renderToImage(
             nodes: nodes,
@@ -28,11 +31,13 @@ private struct FrameSource {
 
 private func frameSource(_ document: MotionDocument, _ compId: EntityID, _ renderer: MetalRenderer,
                          _ textures: (any TextureProvider)?, width: Int, height: Int,
-                         transparent: Bool) -> FrameSource? {
+                         transparent: Bool, video: VideoFrameProvider? = nil,
+                         assetBaseURL: URL? = nil) -> FrameSource? {
     guard let comp = document.composition(compId) else { return nil }
     let bg = comp.backgroundColor
     return FrameSource(document: document, compId: compId, renderer: renderer,
-                       textEngine: TextEngine(device: renderer.device), textures: textures, comp: comp,
+                       textEngine: TextEngine(device: renderer.device), textures: textures,
+                       video: video, assetBaseURL: assetBaseURL, comp: comp,
                        pixelSize: (max(width, 1), max(height, 1)),
                        clear: transparent ? SIMD4(0, 0, 0, 0) : SIMD4(bg.r, bg.g, bg.b, 1))
 }
@@ -45,11 +50,13 @@ public enum GIFExporter {
 
     public static func export(document: MotionDocument, compId: EntityID, renderer: MetalRenderer,
                               textures: (any TextureProvider)? = nil,
+                              video: VideoFrameProvider? = nil, assetBaseURL: URL? = nil,
                               width: Int, height: Int, fps: Double,
                               startTime: TimeInterval, endTime: TimeInterval,
                               to url: URL, progress: ((Double) -> Void)? = nil) throws {
         guard let src = frameSource(document, compId, renderer, textures, width: width, height: height,
-                                    transparent: false) else { throw GIFError.setup }
+                                    transparent: false, video: video, assetBaseURL: assetBaseURL)
+        else { throw GIFError.setup }
         let cappedFps = min(max(fps, 1), 50)
         let duration = max(endTime - startTime, 1 / cappedFps)
         let frameCount = max(Int((duration * cappedFps).rounded()), 1)
@@ -79,12 +86,14 @@ public enum ImageSequenceExporter {
 
     public static func export(document: MotionDocument, compId: EntityID, renderer: MetalRenderer,
                               textures: (any TextureProvider)? = nil,
+                              video: VideoFrameProvider? = nil, assetBaseURL: URL? = nil,
                               width: Int, height: Int, fps: Double,
                               startTime: TimeInterval, endTime: TimeInterval,
                               transparent: Bool = true, to directory: URL,
                               baseName: String = "frame", progress: ((Double) -> Void)? = nil) throws {
         guard let src = frameSource(document, compId, renderer, textures, width: width, height: height,
-                                    transparent: transparent) else { throw SequenceError.setup }
+                                    transparent: transparent, video: video, assetBaseURL: assetBaseURL)
+        else { throw SequenceError.setup }
         let duration = max(endTime - startTime, 1 / max(fps, 1))
         let frameCount = max(Int((duration * fps).rounded()), 1)
 

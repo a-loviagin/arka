@@ -81,11 +81,16 @@ public final class VideoExporter {
     private let renderer: MetalRenderer
     private let textEngine: TextEngine?
     private weak var textures: (any TextureProvider)?
+    private let video: VideoFrameProvider?
+    private let assetBaseURL: URL?
 
-    public init(renderer: MetalRenderer, textures: (any TextureProvider)? = nil) {
+    public init(renderer: MetalRenderer, textures: (any TextureProvider)? = nil,
+                video: VideoFrameProvider? = nil, assetBaseURL: URL? = nil) {
         self.renderer = renderer
         self.textEngine = TextEngine(device: renderer.device)
         self.textures = textures
+        self.video = video
+        self.assetBaseURL = assetBaseURL
     }
 
     /// `cancel` is polled between frames. `progress` is called with 0…1 after each frame.
@@ -168,7 +173,8 @@ public final class VideoExporter {
             }
 
             let t = settings.startTime + Double(i) / settings.fps
-            let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures)
+            let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures,
+                                          video: video, assetBaseURL: assetBaseURL)
                 .build(compId: compId, at: t)
             renderer.render(nodes: nodes, compSize: compSize, clear: clear, into: texture)
 

@@ -56,21 +56,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shared export plumbing: prompt for a destination, then run `work` off the main thread
     /// (building its own renderer so nothing non-Sendable is captured), revealing the result.
     private func runExport(suggestedName: String, contentTypes: [UTType],
-                           _ work: @escaping @Sendable (MotionDocument, MetalRenderer, TextureCache, Composition, URL) throws -> Void) {
+                           _ work: @escaping @Sendable (MotionDocument, MetalRenderer, TextureCache, VideoFrameProvider, URL?, Composition, URL) throws -> Void) {
         let panel = NSSavePanel()
         if !contentTypes.isEmpty { panel.allowedContentTypes = contentTypes }
         panel.nameFieldStringValue = suggestedName
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         let doc = model.document
+        let baseURL = model.assetBaseURL // resolves video asset paths in exported frames
         DispatchQueue.global(qos: .userInitiated).async {
             guard let device = MTLCreateSystemDefaultDevice(),
                   let renderer = try? MetalRenderer(device: device),
                   let comp = doc.mainComposition else { return }
             let cache = TextureCache(device: device)
             cache.register(id: DemoDocument.logoAssetId, cgImage: DemoDocument.makeLogoImage())
+            let video = VideoFrameProvider(device: device)
             do {
-                try work(doc, renderer, cache, comp, url)
+                try work(doc, renderer, cache, video, baseURL, comp, url)
                 DispatchQueue.main.async { NSWorkspace.shared.activateFileViewerSelecting([url]) }
             } catch {
                 let message = error.localizedDescription
@@ -83,30 +85,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func exportMovie(_ sender: Any?) {
-        runExport(suggestedName: "arka.mp4", contentTypes: [.mpeg4Movie]) { doc, renderer, cache, comp, url in
-            try VideoExporter(renderer: renderer, textures: cache)
+        runExport(suggestedName: "arka.mp4", contentTypes: [.mpeg4Movie]) { doc, renderer, cache, video, baseURL, comp, url in
+            try VideoExporter(renderer: renderer, textures: cache, video: video, assetBaseURL: baseURL)
                 .export(document: doc, compId: comp.id, settings: .standard(for: comp), to: url)
         }
     }
 
     @objc func exportProRes(_ sender: Any?) {
-        runExport(suggestedName: "arka.mov", contentTypes: [.quickTimeMovie]) { doc, renderer, cache, comp, url in
-            try VideoExporter(renderer: renderer, textures: cache)
+        runExport(suggestedName: "arka.mov", contentTypes: [.quickTimeMovie]) { doc, renderer, cache, video, baseURL, comp, url in
+            try VideoExporter(renderer: renderer, textures: cache, video: video, assetBaseURL: baseURL)
                 .export(document: doc, compId: comp.id, settings: .proResAlpha(for: comp), to: url)
         }
     }
 
     @objc func exportGIF(_ sender: Any?) {
-        runExport(suggestedName: "arka.gif", contentTypes: [.gif]) { doc, renderer, cache, comp, url in
+        runExport(suggestedName: "arka.gif", contentTypes: [.gif]) { doc, renderer, cache, video, baseURL, comp, url in
             try GIFExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                   video: video, assetBaseURL: baseURL,
                                    width: Int(comp.size.x), height: Int(comp.size.y), fps: 25,
                                    startTime: 0, endTime: comp.duration, to: url)
         }
     }
 
     @objc func exportPNGSequence(_ sender: Any?) {
-        runExport(suggestedName: "arka-frames", contentTypes: []) { doc, renderer, cache, comp, url in
+        runExport(suggestedName: "arka-frames", contentTypes: []) { doc, renderer, cache, video, baseURL, comp, url in
             try ImageSequenceExporter.export(document: doc, compId: comp.id, renderer: renderer, textures: cache,
+                                             video: video, assetBaseURL: baseURL,
                                              width: Int(comp.size.x), height: Int(comp.size.y), fps: comp.fps,
                                              startTime: 0, endTime: comp.duration, transparent: true, to: url)
         }

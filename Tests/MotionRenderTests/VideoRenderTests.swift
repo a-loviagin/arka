@@ -1,6 +1,7 @@
 #if os(macOS)
 import XCTest
 import AVFoundation
+import CoreGraphics
 import Metal
 import simd
 @testable import MotionRender
@@ -61,6 +62,46 @@ final class VideoRenderTests: XCTestCase {
         XCTAssertLessThan(c.r, 120, "green, not red/white")
         XCTAssertLessThan(img.pixel(5, 5).r + img.pixel(5, 5).g + img.pixel(5, 5).b, 30,
                           "outside the video quad is background")
+    }
+
+    func testVideoCompositesIntoExportedMovie() throws {
+        let clip = try makeClip()
+        defer { try? FileManager.default.removeItem(at: clip) }
+
+        let asset = Asset(id: "vid", type: .video, path: clip.path, pixelSize: Vec2(64, 64))
+        let layer = Layer(id: "v", name: "v", sortKey: "a0",
+                          content: .video(VideoContent(assetId: "vid")),
+                          transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(Vec2(50, 50))))
+        let comp = Composition(id: "comp_main", size: Vec2(100, 100), fps: 30, duration: 0.3,
+                               backgroundColor: .black, layers: [layer])
+        let doc = MotionDocument(id: "d", assets: [asset], compositions: [comp], mainCompositionId: "comp_main")
+
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent("arka_video_export_\(UInt32.random(in: 0..<UInt32.max)).mp4")
+        defer { try? FileManager.default.removeItem(at: out) }
+
+        // Export with a video provider — the video layer must composite into the file.
+        try VideoExporter(renderer: renderer, video: VideoFrameProvider(device: device))
+            .export(document: doc, compId: "comp_main", settings: .standard(for: comp), to: out)
+
+        // Read a frame of the exported movie back; its centre should be the (green) video, not black.
+        let g = AVAssetImageGenerator(asset: AVURLAsset(url: out))
+        g.appliesPreferredTrackTransform = true
+        let cg = try g.copyCGImage(at: CMTime(seconds: 0.1, preferredTimescale: 600), actualTime: nil)
+        let c = centerPixel(cg)
+        XCTAssertGreaterThan(c.g, 100, "exported frame's centre is the green video")
+        XCTAssertGreaterThan(c.g, c.r, "green channel dominates")
+    }
+
+    /// Center pixel (sRGB) of a decoded frame.
+    private func centerPixel(_ image: CGImage) -> (r: Int, g: Int, b: Int) {
+        let cs = CGColorSpace(name: CGColorSpace.sRGB)!
+        var px = [UInt8](repeating: 0, count: 4)
+        let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                            space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(image, in: CGRect(x: -CGFloat(image.width) / 2 + 0.5, y: -CGFloat(image.height) / 2 + 0.5,
+                                   width: CGFloat(image.width), height: CGFloat(image.height)))
+        return (Int(px[0]), Int(px[1]), Int(px[2]))
     }
 
     func testMissingProviderSkipsVideoLayer() {
