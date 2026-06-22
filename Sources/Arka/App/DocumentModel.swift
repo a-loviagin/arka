@@ -142,6 +142,41 @@ final class DocumentModel {
         try? store.perform(command, in: txn)
     }
 
+    // MARK: Generic property writes (inspector bindings, editor-ui.md §4)
+
+    /// Auto-keyframing write for any property path: `SetProperty` when the track is static, or a
+    /// `SetKeyframe` at the playhead when it's animated — the same rule as the transform setters.
+    /// `isAnimated` comes from the live `AnimatableValue` the inspector is bound to.
+    func setAnimatable(path: String, value: AnyValue, isAnimated: Bool, within txn: TransactionID) {
+        guard let comp = mainComp else { return }
+        let command: AnyCommand = isAnimated
+            ? .setKeyframe(path: path, keyframe: AnyKeyframe(t: min(max(playback.currentTime, 0), comp.duration), v: value))
+            : .setProperty(path: path, value: value)
+        try? store.perform(command, in: txn)
+    }
+
+    /// One-shot variant (its own undo step) for controls without a drag lifecycle — e.g. color wells.
+    func setAnimatableOnce(path: String, value: AnyValue, isAnimated: Bool, label: String) {
+        guard let comp = mainComp else { return }
+        let command: AnyCommand = isAnimated
+            ? .setKeyframe(path: path, keyframe: AnyKeyframe(t: min(max(playback.currentTime, 0), comp.duration), v: value))
+            : .setProperty(path: path, value: value)
+        try? store.perform(command, label: label)
+    }
+
+    /// Toggle a keyframe at the playhead for an arbitrary path (generic version of `toggleKeyframe`).
+    /// `existingTimes` are the track's keyframe times (the inspector reads them from the value).
+    func toggleKeyframe(path: String, value: AnyValue, existingTimes: [TimeInterval]) {
+        guard let comp = mainComp else { return }
+        let t = min(max(playback.currentTime, 0), comp.duration)
+        let tolerance = 0.5 / max(comp.fps, 1)
+        if let hit = existingTimes.first(where: { abs($0 - t) <= tolerance }) {
+            try? store.perform(.removeKeyframe(path: path, t: hit), label: "Remove Keyframe")
+        } else {
+            try? store.perform(.setKeyframe(path: path, keyframe: AnyKeyframe(t: t, v: value)), label: "Add Keyframe")
+        }
+    }
+
     // MARK: Layer list
 
     func setVisible(_ layerId: EntityID, _ visible: Bool) {

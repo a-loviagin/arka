@@ -404,85 +404,188 @@ private struct SelectionOverlay: View {
 /// A minimal inspector: the selected layer's name/type plus a live opacity slider that writes
 /// through commands (one transaction per drag). Reads resolved values at the playhead, so fields
 /// reflect the animated value (editor-ui.md §4).
+/// Type-aware property panel (editor-ui.md §4): common transform controls plus a section keyed to
+/// the layer's content (shape fill/stroke/corner-radius/size, text size/tracking/fill, …). Every
+/// field reads the resolved value at the playhead and writes through commands, auto-keyframing when
+/// the track is animated; the diamond toggles a keyframe at the playhead.
 struct InspectorView: View {
     let model: DocumentModel
     @State private var opacityTxn: TransactionID?
 
+    private var t: TimeInterval { model.playback.currentTime }
+
     var body: some View {
         ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-            if let layer = model.selectedLayer {
-                Text(layer.name.isEmpty ? "Layer" : layer.name)
-                    .font(.headline)
-                Text(layer.content.typeName.capitalized)
-                    .font(.subheadline).foregroundStyle(.secondary)
-                Divider()
+            VStack(alignment: .leading, spacing: 10) {
+                if let layer = model.selectedLayer {
+                    Text(layer.name.isEmpty ? "Layer" : layer.name).font(.headline)
+                    Text(layer.content.typeName.capitalized)
+                        .font(.subheadline).foregroundStyle(.secondary)
+                    Divider()
 
-                let t = model.playback.currentTime
-                let position = layer.transform.position.resolve(at: t)
-                let scale = layer.transform.scale.resolve(at: t)
-                let rotation = layer.transform.rotation.resolve(at: t)
-                let id = layer.id
+                    transformSection(layer)
 
-                HStack(spacing: 6) {
-                    keyButton(id, .position)
-                    ScrubbableField(title: "X", value: position.x, format: "%.0f", sensitivity: 1,
-                        onBegin: { model.store.begin("Position X") },
-                        onChange: { v, txn in model.setPosition(id, to: Vec2(v, livePosition(id).y), within: txn) },
-                        onEnd: { model.store.commit($0) })
-                    ScrubbableField(title: "Y", value: position.y, format: "%.0f", sensitivity: 1,
-                        onBegin: { model.store.begin("Position Y") },
-                        onChange: { v, txn in model.setPosition(id, to: Vec2(livePosition(id).x, v), within: txn) },
-                        onEnd: { model.store.commit($0) })
-                }
-                ScrubbableField(title: "∠", value: rotation, format: "%.1f°", sensitivity: 0.5,
-                    onBegin: { model.store.begin("Rotation") },
-                    onChange: { v, txn in model.setRotation(id, to: v, within: txn) },
-                    onEnd: { model.store.commit($0) })
-                HStack(spacing: 6) {
-                    ScrubbableField(title: "W", value: scale.x * 100, format: "%.0f%%", sensitivity: 0.5,
-                        onBegin: { model.store.begin("Scale X") },
-                        onChange: { v, txn in model.setScale(id, to: Vec2(v / 100, liveScale(id).y), within: txn) },
-                        onEnd: { model.store.commit($0) })
-                    ScrubbableField(title: "H", value: scale.y * 100, format: "%.0f%%", sensitivity: 0.5,
-                        onBegin: { model.store.begin("Scale Y") },
-                        onChange: { v, txn in model.setScale(id, to: Vec2(liveScale(id).x, v / 100), within: txn) },
-                        onEnd: { model.store.commit($0) })
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    let opacity = layer.transform.opacity.resolve(at: t)
-                    HStack {
-                        keyButton(layer.id, .opacity)
-                        Text(String(format: "Opacity  %.0f%%", opacity * 100)).font(.caption)
+                    switch layer.content {
+                    case .shape(let s): Divider(); shapeSection(layer.id, s)
+                    case .text(let tc): Divider(); textSection(layer.id, tc)
+                    case .image, .video:
+                        Divider()
+                        Text("Image and video editing (fit, replace) is coming.")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    default: EmptyView()
                     }
-                    Slider(value: Binding(
-                        get: { layer.transform.opacity.resolve(at: model.playback.currentTime) },
-                        set: { newValue in
-                            if let txn = opacityTxn { model.setOpacity(layer.id, to: newValue, within: txn) }
-                        }
-                    ), in: 0...1, onEditingChanged: { editing in
-                        if editing {
-                            opacityTxn = model.store.begin("Opacity")
-                        } else if let txn = opacityTxn {
-                            model.store.commit(txn); opacityTxn = nil
-                        }
-                    })
+
+                    Divider()
+                    PresetsView(model: model)
+                    Spacer(minLength: 0)
+                } else {
+                    Text("No selection").foregroundStyle(.secondary)
+                    Text("Pick a tool and click the canvas, or select a layer.")
+                        .font(.caption).foregroundStyle(.tertiary)
+                    Spacer(minLength: 0)
                 }
-                Divider()
-                PresetsView(model: model)
-                Spacer(minLength: 0)
-            } else {
-                Text("No selection").foregroundStyle(.secondary)
-                Text("Click a layer on the canvas.").font(.caption).foregroundStyle(.tertiary)
-                Spacer(minLength: 0)
             }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(.bar)
     }
+
+    // MARK: Sections
+
+    @ViewBuilder private func transformSection(_ layer: Layer) -> some View {
+        let id = layer.id
+        let position = layer.transform.position.resolve(at: t)
+        let scale = layer.transform.scale.resolve(at: t)
+        sectionLabel("Transform")
+        HStack(spacing: 6) {
+            keyButton(id, .position)
+            ScrubbableField(title: "X", value: position.x, format: "%.0f", sensitivity: 1,
+                onBegin: { model.store.begin("Position X") },
+                onChange: { v, txn in model.setPosition(id, to: Vec2(v, livePosition(id).y), within: txn) },
+                onEnd: { model.store.commit($0) })
+            ScrubbableField(title: "Y", value: position.y, format: "%.0f", sensitivity: 1,
+                onBegin: { model.store.begin("Position Y") },
+                onChange: { v, txn in model.setPosition(id, to: Vec2(livePosition(id).x, v), within: txn) },
+                onEnd: { model.store.commit($0) })
+        }
+        ScrubbableField(title: "∠", value: layer.transform.rotation.resolve(at: t), format: "%.1f°", sensitivity: 0.5,
+            onBegin: { model.store.begin("Rotation") },
+            onChange: { v, txn in model.setRotation(id, to: v, within: txn) },
+            onEnd: { model.store.commit($0) })
+        HStack(spacing: 6) {
+            ScrubbableField(title: "Scale W", value: scale.x * 100, format: "%.0f%%", sensitivity: 0.5,
+                onBegin: { model.store.begin("Scale X") },
+                onChange: { v, txn in model.setScale(id, to: Vec2(v / 100, liveScale(id).y), within: txn) },
+                onEnd: { model.store.commit($0) })
+            ScrubbableField(title: "H", value: scale.y * 100, format: "%.0f%%", sensitivity: 0.5,
+                onBegin: { model.store.begin("Scale Y") },
+                onChange: { v, txn in model.setScale(id, to: Vec2(liveScale(id).x, v / 100), within: txn) },
+                onEnd: { model.store.commit($0) })
+        }
+        opacityRow(layer)
+    }
+
+    @ViewBuilder private func shapeSection(_ id: EntityID, _ s: ShapeContent) -> some View {
+        sectionLabel("Shape")
+        // Real dimensions (distinct from Scale — animating size keeps stroke width).
+        let size = s.size.resolve(at: t)
+        let sizePath = "\(id)/content/size"
+        HStack(spacing: 6) {
+            diamond(path: sizePath, isAnimated: s.size.isAnimated, times: keyTimes(s.size)) { .vec2(s.size.resolve(at: t)) }
+            ScrubbableField(title: "W", value: size.x, format: "%.0f", sensitivity: 1,
+                onBegin: { model.store.begin("Width") },
+                onChange: { v, txn in model.setAnimatable(path: sizePath, value: .vec2(Vec2(max(v, 1), liveSize(id).y)), isAnimated: s.size.isAnimated, within: txn) },
+                onEnd: { model.store.commit($0) })
+            ScrubbableField(title: "H", value: size.y, format: "%.0f", sensitivity: 1,
+                onBegin: { model.store.begin("Height") },
+                onChange: { v, txn in model.setAnimatable(path: sizePath, value: .vec2(Vec2(liveSize(id).x, max(v, 1))), isAnimated: s.size.isAnimated, within: txn) },
+                onEnd: { model.store.commit($0) })
+        }
+        colorRow("Fill", id, "content/fillColor", s.fillColor, defaultColor: .black)
+        colorRow("Stroke", id, "content/strokeColor", s.strokeColor, defaultColor: .clear)
+        scalarRow("Stroke W", id, "content/strokeWidth", s.strokeWidth ?? .static(0), sensitivity: 0.5)
+        if s.geometry == .rect {
+            scalarRow("Radius", id, "content/cornerRadius", s.cornerRadius ?? .static(0), sensitivity: 0.5)
+        }
+    }
+
+    @ViewBuilder private func textSection(_ id: EntityID, _ tc: TextContent) -> some View {
+        sectionLabel("Text")
+        Text("“\(tc.string)” · \(tc.fontFamily)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        scalarRow("Size", id, "content/fontSize", tc.fontSize, sensitivity: 0.5)
+        scalarRow("Tracking", id, "content/tracking", tc.tracking ?? .static(0), format: "%.1f", sensitivity: 0.2)
+        colorRow("Fill", id, "content/fillColor", tc.fillColor, defaultColor: .white)
+        Text("Editing the text, font, and alignment is coming.")
+            .font(.caption2).foregroundStyle(.tertiary)
+    }
+
+    @ViewBuilder private func opacityRow(_ layer: Layer) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                keyButton(layer.id, .opacity)
+                Text(String(format: "Opacity  %.0f%%", layer.transform.opacity.resolve(at: t) * 100)).font(.caption)
+            }
+            Slider(value: Binding(
+                get: { layer.transform.opacity.resolve(at: model.playback.currentTime) },
+                set: { if let txn = opacityTxn { model.setOpacity(layer.id, to: $0, within: txn) } }
+            ), in: 0...1, onEditingChanged: { editing in
+                if editing { opacityTxn = model.store.begin("Opacity") }
+                else if let txn = opacityTxn { model.store.commit(txn); opacityTxn = nil }
+            })
+        }
+    }
+
+    // MARK: Reusable rows
+
+    private func sectionLabel(_ s: String) -> some View {
+        Text(s.uppercased()).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+    }
+
+    /// A diamond + scrubbable bound to a scalar `AnimatableValue` at `id/prop`.
+    private func scalarRow(_ title: String, _ id: EntityID, _ prop: String, _ av: AnimatableValue<Double>,
+                           format: String = "%.0f", sensitivity: Double = 1) -> some View {
+        let path = "\(id)/\(prop)"
+        return HStack(spacing: 6) {
+            diamond(path: path, isAnimated: av.isAnimated, times: keyTimes(av)) { .scalar(av.resolve(at: t)) }
+            ScrubbableField(title: title, value: av.resolve(at: t), format: format, sensitivity: sensitivity,
+                onBegin: { model.store.begin(title) },
+                onChange: { v, txn in model.setAnimatable(path: path, value: .scalar(v), isAnimated: av.isAnimated, within: txn) },
+                onEnd: { model.store.commit($0) })
+        }
+    }
+
+    /// A diamond + color well bound to a (possibly nil) color `AnimatableValue` at `id/prop`.
+    private func colorRow(_ title: String, _ id: EntityID, _ prop: String,
+                          _ av: AnimatableValue<ColorValue>?, defaultColor: ColorValue) -> some View {
+        let path = "\(id)/\(prop)"
+        let current = av?.resolve(at: t) ?? defaultColor
+        let isAnimated = av?.isAnimated ?? false
+        let times = av.map(keyTimes) ?? []
+        return HStack(spacing: 6) {
+            diamond(path: path, isAnimated: isAnimated, times: times) { .color(current) }
+            Text(title).font(.caption2).foregroundStyle(.secondary).frame(width: 48, alignment: .leading)
+            ColorPicker("", selection: Binding(
+                get: { current.swiftUIColor },
+                set: { model.setAnimatableOnce(path: path, value: .color(ColorValue(swiftUI: $0)),
+                                                isAnimated: isAnimated, label: title) }
+            ), supportsOpacity: true).labelsHidden()
+            Spacer()
+        }
+    }
+
+    private func diamond(path: String, isAnimated: Bool, times: [TimeInterval],
+                         value: @escaping () -> AnyValue) -> some View {
+        let tol = 0.5 / max(model.mainComp?.fps ?? 60, 1)
+        let active = times.contains { abs($0 - t) <= tol }
+        return Button { model.toggleKeyframe(path: path, value: value(), existingTimes: times) } label: {
+            Image(systemName: active ? "diamond.fill" : "diamond")
+                .font(.system(size: 10)).foregroundStyle(active ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.plain).help("Toggle keyframe at playhead")
+    }
+
+    private func keyTimes<V>(_ av: AnimatableValue<V>) -> [TimeInterval] { TimelineDigest.keyframeTimes(of: av) }
 
     private func livePosition(_ id: EntityID) -> Vec2 {
         model.layer(id)?.transform.position.resolve(at: model.playback.currentTime) ?? .zero
@@ -490,20 +593,29 @@ struct InspectorView: View {
     private func liveScale(_ id: EntityID) -> Vec2 {
         model.layer(id)?.transform.scale.resolve(at: model.playback.currentTime) ?? .one
     }
+    private func liveSize(_ id: EntityID) -> Vec2 {
+        if case .shape(let s)? = model.layer(id)?.content { return s.size.resolve(at: model.playback.currentTime) }
+        return .one
+    }
 
-    /// A keyframe toggle (diamond): filled when a keyframe sits at the playhead. Click to add/remove
-    /// a keyframe for that property at the current time (editor-ui.md §2 "add keyframe" diamond).
+    /// Keyframe toggle for the transform props that have a typed helper (position/opacity).
     private func keyButton(_ layerId: EntityID, _ property: DocumentModel.KeyframeProperty) -> some View {
         let active = model.hasKeyframeAtPlayhead(layerId, property)
-        return Button {
-            model.toggleKeyframe(layerId, property)
-        } label: {
+        return Button { model.toggleKeyframe(layerId, property) } label: {
             Image(systemName: active ? "diamond.fill" : "diamond")
-                .font(.system(size: 10))
-                .foregroundStyle(active ? Color.accentColor : Color.secondary)
+                .font(.system(size: 10)).foregroundStyle(active ? Color.accentColor : Color.secondary)
         }
-        .buttonStyle(.plain)
-        .help("Toggle keyframe at playhead")
+        .buttonStyle(.plain).help("Toggle keyframe at playhead")
+    }
+}
+
+/// SwiftUI ↔ kernel color bridging for the inspector color wells (sRGB, matching ColorValue storage).
+extension ColorValue {
+    var swiftUIColor: Color { Color(.sRGB, red: r, green: g, blue: b, opacity: a) }
+    init(swiftUI color: Color) {
+        let ns = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+        self.init(r: Double(ns.redComponent), g: Double(ns.greenComponent),
+                  b: Double(ns.blueComponent), a: Double(ns.alphaComponent))
     }
 }
 

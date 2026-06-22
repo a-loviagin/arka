@@ -97,6 +97,30 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(m.mainComp!.layers.count, undosBefore)
     }
 
+    func testGenericSettersWriteAndAutoKeyframe() throws {
+        let m = freshModel()
+        let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))
+
+        // Static write through a transaction (size).
+        let txn = m.store.begin("Size")
+        m.setAnimatable(path: "\(id)/content/size", value: .vec2(Vec2(300, 200)), isAnimated: false, within: txn)
+        m.store.commit(txn)
+        guard case .shape(let s1) = try XCTUnwrap(m.layer(id)).content else { return XCTFail("shape") }
+        XCTAssertEqual(s1.size.resolve(at: 0), Vec2(300, 200))
+
+        // One-shot color write (fill).
+        m.setAnimatableOnce(path: "\(id)/content/fillColor", value: .color(ColorValue(hex: "#FF0000")!),
+                            isAnimated: false, label: "Fill")
+        guard case .shape(let s2) = try XCTUnwrap(m.layer(id)).content else { return XCTFail("shape") }
+        XCTAssertEqual(s2.fillColor?.resolve(at: 0).r ?? 0, 1.0, accuracy: 0.01)
+        XCTAssertFalse(s2.fillColor?.isAnimated ?? true, "static write, no keyframes")
+
+        // Toggling a keyframe animates the property.
+        m.toggleKeyframe(path: "\(id)/content/fillColor", value: .color(ColorValue(hex: "#00FF00")!), existingTimes: [])
+        guard case .shape(let s3) = try XCTUnwrap(m.layer(id)).content else { return XCTFail("shape") }
+        XCTAssertTrue(s3.fillColor?.isAnimated ?? false, "keyframe toggle animates fill")
+    }
+
     func testAutosaveSessionRoundTrips() throws {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("arka_rec_\(UInt32.random(in: 0..<UInt32.max)).motion")
