@@ -22,6 +22,18 @@ public struct VideoMotionAnalysis: Codable, Sendable, Equatable {
             self.role = role; self.pattern = pattern; self.character = character
             self.start = start; self.duration = duration; self.count = max(count, 1)
         }
+
+        // Lenient decode: the model may omit timing/count for simple elements.
+        private enum CodingKeys: String, CodingKey { case role, pattern, character, start, duration, count }
+        public init(from d: any Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            role = try c.decode(String.self, forKey: .role)
+            pattern = try c.decode(MotionPattern.self, forKey: .pattern)
+            character = try c.decodeIfPresent(MotionCharacter.self, forKey: .character) ?? .snappy
+            start = try c.decodeIfPresent(TimeInterval.self, forKey: .start) ?? 0
+            duration = try c.decodeIfPresent(TimeInterval.self, forKey: .duration) ?? 0.5
+            count = max(try c.decodeIfPresent(Int.self, forKey: .count) ?? 1, 1)
+        }
     }
 
     public var summary: String          // natural-language intent ("title pops in, cards slide up")
@@ -31,6 +43,15 @@ public struct VideoMotionAnalysis: Codable, Sendable, Equatable {
 
     public init(summary: String, palette: [String] = [], elements: [Element], staggerGap: TimeInterval? = nil) {
         self.summary = summary; self.palette = palette; self.elements = elements; self.staggerGap = staggerGap
+    }
+
+    private enum CodingKeys: String, CodingKey { case summary, palette, elements, staggerGap }
+    public init(from d: any Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        summary = try c.decodeIfPresent(String.self, forKey: .summary) ?? ""
+        palette = try c.decodeIfPresent([String].self, forKey: .palette) ?? []
+        elements = try c.decodeIfPresent([Element].self, forKey: .elements) ?? []
+        staggerGap = try c.decodeIfPresent(TimeInterval.self, forKey: .staggerGap)
     }
 }
 

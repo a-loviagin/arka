@@ -34,8 +34,13 @@ editable vocabulary, and an eval harness gates every prompt/example change. Beca
   timing, dominant easing, stagger gap, palette) injected into the system prompt. The analyzer
   (`VideoMotionAnalyzer`) is the data source: a Claude-vision pass and/or a deterministic CV motion
   signature (frame-diff onsets + OKLab palette) — both feed the same offline-tested synthesizer.
-- Next: wire the live vision analyzer + CV signature + an ingestion UI; asset analysis + canvas-
-  snapshot grounding. 196 tests.
+- **Slice 4 (done)** — the **vision pass** so the model actually *sees* a clip: `ClipFrameSampler`
+  (MotionRender) samples evenly-spaced JPEG frames via AVFoundation; `ClaudeVideoAnalyzer` (MotionAI)
+  sends them to Claude as image blocks and gets back a structured `VideoMotionAnalysis` through a
+  forced tool. Vision reads on-screen text natively, so this subsumes OCR — no separate engine. The
+  analysis flows straight into the already-tested `TasteSynthesizer` / `TasteProfile`.
+- Next: wire ingestion into the app (drop clips to teach style) + a deterministic CV motion signature
+  (render-compare verifier); asset analysis + canvas-snapshot grounding. 200 tests.
 
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence

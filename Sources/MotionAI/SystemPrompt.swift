@@ -101,6 +101,28 @@ public enum SystemPrompt {
         return out
     }
 
+    /// System prompt for the reference-clip vision analyzer (ai-pipeline.md §3): describe a clip's
+    /// motion in our pattern/character vocabulary, not pixels.
+    public static func videoAnalysis() -> String {
+        let patterns = MotionPattern.allCases.map(\.rawValue).joined(separator: ", ")
+        let characters = MotionCharacter.allCases.map(\.rawValue).joined(separator: ", ")
+        return """
+        You analyze short motion-design clips for a keyframe animation tool. Watch the ordered frames \
+        and describe the motion as a small set of design elements — never raw pixels or motion vectors.
+
+        For each moving thing, identify: a role (title/logo/card/icon/background/…), the closest \
+        ENTRANCE/EXIT/EMPHASIS pattern, the easing character, when it starts, how long it moves, and \
+        whether it's one element or a staggered group (count + the gap between items). Also report the \
+        dominant colors (#RRGGBB) and a one-line summary. Prefer the smallest faithful description; \
+        timing in seconds, 60fps norms.
+
+        PATTERNS: \(patterns).
+        CHARACTERS: \(characters).
+
+        Respond only by calling the tool.
+        """
+    }
+
     /// A compact, model-facing description of one generation request.
     public static func userMessage(for request: GenerationRequest) -> String {
         var parts = ["MODE: \(request.mode.rawValue)", "PROMPT: \(request.prompt)",
