@@ -75,7 +75,7 @@ struct CanvasArea: View {
             .gesture(dragGesture(viewport))
             .simultaneousGesture(zoomGesture(viewSize: geo.size))
             .simultaneousGesture(renameTapGesture(viewSize: geo.size))
-            .onDrop(of: [.image], isTargeted: nil) { providers, location in
+            .onDrop(of: [.svg, .image], isTargeted: nil) { providers, location in
                 handleImageDrop(providers, at: location, viewport: viewport); return true
             }
             .overlay(alignment: .topLeading) { toolbar }
@@ -278,10 +278,18 @@ struct CanvasArea: View {
     /// the drop point (mapped to the active frame's comp space).
     private func handleImageDrop(_ providers: [NSItemProvider], at location: CGPoint, viewport: Viewport) {
         let comp = viewport.toComp(Vec2(location.x, location.y))
-        for p in providers where p.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-            p.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                guard let data else { return }
-                DispatchQueue.main.async { model.importImage(data: data, at: comp) }
+        for p in providers {
+            // SVG → editable vector layers; everything else raster → an image layer.
+            if p.hasItemConformingToTypeIdentifier(UTType.svg.identifier) {
+                p.loadDataRepresentation(forTypeIdentifier: UTType.svg.identifier) { data, _ in
+                    guard let data else { return }
+                    DispatchQueue.main.async { model.importSVG(data: data, at: comp) }
+                }
+            } else if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                p.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                    guard let data else { return }
+                    DispatchQueue.main.async { model.importImage(data: data, at: comp) }
+                }
             }
         }
     }

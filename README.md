@@ -14,7 +14,11 @@ web/server port a port rather than a rewrite.
 they land as an editable image layer at the drop point — and **⌘V paste** an image from the clipboard
 (PNG, or any TIFF transcoded to PNG) onto the canvas. Both funnel through one `importImage`:
 content-addressed asset (identical bytes dedup to one asset), texture registered, fit-scaled image
-layer, one ⌘Z. (Vector/SVG → editable paths is a follow-up.) 219 tests.
+layer, one ⌘Z. **SVG** drops/pastes import as **editable vector layers**: a Foundation-only
+`SVGPathParser` turns each `<path d="…">` (M/L/H/V/C/S/Q/T/Z, absolute + relative; quadratics raised
+to cubics) into our cubic-bezier `PathData`, and `SVGImport` pulls each path's fill — one group with a
+path shape layer per `<path>`, fit-scaled at the drop point, fully editable (arcs approximated for
+v1). 228 tests.
 
 **Phase 27 — AI quality & evals (in progress).** Learning from examples without fine-tuning:
 exemplars become *data the model reads* (retrieval-augmented few-shot), the pattern library is the

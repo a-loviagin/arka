@@ -535,6 +535,58 @@ final class DocumentModel {
         return layer.id
     }
 
+    /// Import an SVG as editable vector layers: one path shape per `<path>`, parented to a group
+    /// placed at `compPoint` and fit-scaled. Each path keeps its own fill and stays fully editable.
+    /// One ⌘Z; selects the group.
+    @discardableResult
+    func importSVG(data: Data, at compPoint: Vec2? = nil) -> EntityID? {
+        guard let comp = mainComp, let text = String(data: data, encoding: .utf8) else { return nil }
+        let shapes = SVGImport.shapes(fromSVG: text)
+        guard !shapes.isEmpty else { return nil }
+
+        // Combined bounds (SVG coords) → recenter all geometry about the origin so the group's
+        // position is the drawing's center.
+        var lo = Vec2(.greatestFiniteMagnitude, .greatestFiniteMagnitude)
+        var hi = Vec2(-.greatestFiniteMagnitude, -.greatestFiniteMagnitude)
+        for s in shapes where s.path.bounds != nil {
+            let b = s.path.bounds!
+            lo = Vec2(min(lo.x, b.min.x), min(lo.y, b.min.y))
+            hi = Vec2(max(hi.x, b.max.x), max(hi.y, b.max.y))
+        }
+        guard hi.x > lo.x, hi.y > lo.y else { return nil }
+        let center = Vec2((lo.x + hi.x) / 2, (lo.y + hi.y) / 2)
+        func recenter(_ p: PathData) -> PathData {
+            PathData(subpaths: p.subpaths.map { sub in
+                PathData.Subpath(vertices: sub.vertices.map {
+                    PathData.Vertex(point: $0.point - center, inTangent: $0.inTangent, outTangent: $0.outTangent)
+                }, closed: sub.closed)
+            })
+        }
+
+        let drop = compPoint ?? Vec2(comp.size.x / 2, comp.size.y / 2)
+        let fit = (min(comp.size.x, comp.size.y) * 0.4) / max(max(hi.x - lo.x, hi.y - lo.y), 1)
+        let groupId = ids.next("layer")
+        let group = Layer(id: groupId, name: "SVG", sortKey: topSortKey(), content: .group,
+                          transform: Transform(anchor: .static(.zero), position: .static(drop),
+                                               scale: .static(Vec2(fit, fit))))
+        var cmds: [AnyCommand] = [.addLayer(layer: group, compId: comp.id)]
+        var childKey: SortKey? = nil
+        for (idx, s) in shapes.enumerated() {
+            childKey = SortKey.between(childKey, nil)
+            let child = Layer(id: ids.next("layer"), name: "Path \(idx + 1)", sortKey: childKey!,
+                              content: .shape(ShapeContent(geometry: .path,
+                                                           fillColor: .static(s.fill ?? .black),
+                                                           path: recenter(s.path))),
+                              parentId: groupId,
+                              transform: Transform(anchor: .static(.zero), position: .static(.zero)))
+            cmds.append(.addLayer(layer: child, compId: comp.id))
+        }
+        guard (try? store.perform(.batch(commands: cmds, label: "Import SVG"), label: "Import SVG")) != nil
+        else { return nil }
+        selection = [groupId]
+        return groupId
+    }
+
     /// Begin a draw-to-size creation: add a default-sized layer inside a new transaction; the canvas
     /// updates size/position during the drag (`updateCreateRect`) and commits on mouse-up — one ⌘Z.
     func beginCreateLayer(_ kind: NewLayerKind, at compPoint: Vec2) -> (id: EntityID, txn: TransactionID)? {

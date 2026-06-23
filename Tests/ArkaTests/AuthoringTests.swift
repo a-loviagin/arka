@@ -201,6 +201,23 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(m.mainComp!.layers.count, layersBefore + 1)
     }
 
+    func testImportSVGCreatesEditableVectorLayers() throws {
+        let m = freshModel()
+        let svg = ##"<svg><path d="M0 0 L10 0 L0 10 Z" fill="#FF0000"/><path d="M2 2 L4 2 L4 4 Z" fill="#00FF00"/></svg>"##
+        let before = m.mainComp!.layers.count
+        let gid = try XCTUnwrap(m.importSVG(data: Data(svg.utf8), at: Vec2(100, 100)))
+        XCTAssertEqual(m.mainComp!.layers.count, before + 3, "a group + two path children")
+        XCTAssertEqual(m.selection, [gid])
+        let children = m.mainComp!.layers.filter { $0.parentId == gid }
+        XCTAssertEqual(children.count, 2)
+        XCTAssertTrue(children.allSatisfy {
+            if case .shape(let s) = $0.content { return s.geometry == .path && s.path != nil }
+            return false
+        }, "children are editable vector path shapes")
+        m.store.undo() // one ⌘Z reverts the whole import
+        XCTAssertEqual(m.mainComp!.layers.count, before)
+    }
+
     func testSetBlendMode() throws {
         let m = freshModel()
         let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))

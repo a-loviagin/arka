@@ -153,6 +153,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Paste an image from the clipboard onto the canvas as an editable image layer.
     @objc func paste(_ sender: Any?) {
         let pb = NSPasteboard.general
+        // SVG markup on the clipboard → editable vector layers.
+        if let str = pb.string(forType: .string),
+           str.contains("<svg"), let data = str.data(using: .utf8) {
+            model.importSVG(data: data); return
+        }
         if let data = pb.data(forType: .png) {
             model.importImage(data: data, fileExtension: "png"); return
         }
