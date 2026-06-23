@@ -39,8 +39,13 @@ editable vocabulary, and an eval harness gates every prompt/example change. Beca
   sends them to Claude as image blocks and gets back a structured `VideoMotionAnalysis` through a
   forced tool. Vision reads on-screen text natively, so this subsumes OCR — no separate engine. The
   analysis flows straight into the already-tested `TasteSynthesizer` / `TasteProfile`.
-- Next: wire ingestion into the app (drop clips to teach style) + a deterministic CV motion signature
-  (render-compare verifier); asset analysis + canvas-snapshot grounding. 200 tests.
+- **Slice 5 (done)** — the deterministic **CV motion signature** (no model): `MotionSignature`
+  (kernel) = a normalized inter-frame activity curve + onset times + OKLab palette, with
+  `distance(to:)`. `MotionSignatureExtractor` (MotionRender) builds it from frames, and also renders a
+  candidate document to frames and signs it — the **render-compare verifier** that scores a
+  synthesized reconstruction against a reference clip ("find the command list whose render best
+  matches the clip"), and grounds the vision analyzer's labels in real timing.
+- Next: app ingestion UI (drop clips to teach style); asset analysis + canvas-snapshot grounding. 208 tests.
 
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence
