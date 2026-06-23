@@ -148,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func toggleAIPanel(_ sender: Any?) { model.aiPanelVisible.toggle() }
+    @objc func showTasteSheet(_ sender: Any?) { model.tasteSheetVisible = true }
 
     @objc func undo(_ sender: Any?) { model.store.undo() }
     @objc func redo(_ sender: Any?) { model.store.redo() }
@@ -260,6 +261,10 @@ func buildMainMenu(target: AppDelegate) {
                               action: #selector(AppDelegate.toggleAIPanel(_:)), keyEquivalent: "k")
     generate.target = target
     aiMenu.addItem(generate)
+    let teach = NSMenuItem(title: "Teach Style from Clips…",
+                           action: #selector(AppDelegate.showTasteSheet(_:)), keyEquivalent: "")
+    teach.target = target
+    aiMenu.addItem(teach)
     aiItem.submenu = aiMenu
 
     NSApp.mainMenu = mainMenu

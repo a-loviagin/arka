@@ -66,6 +66,7 @@ final class DocumentModel {
             self.selection = self.store.selection.layerIds
             self.scheduleAutosave()
         }
+        loadTaste()
     }
 
     /// The keyframe currently selected in the timeline (for delete / easing), if any.
@@ -83,6 +84,20 @@ final class DocumentModel {
     /// (save panel + off-main render). nil until the app wires it at launch.
     var exportSheetVisible = false
     var runExport: ((ExportSettings) -> Void)?
+
+    // MARK: Taste library ("teach the style" from reference clips — ai-pipeline.md §3)
+
+    /// Global default taste (all projects) and per-project taste (this document only). Merged at
+    /// request time into the few-shot library + aggregate profile. This is data, not training.
+    var globalTaste = TasteStore()
+    var projectTaste = TasteStore()
+    /// A one-shot reference analyzed for the *next* prompt only (not persisted).
+    var pendingReference: VideoMotionAnalysis?
+    var tasteSheetVisible = false
+    /// Transient UI status during clip ingestion ("Analyzing…", an error, …).
+    var tasteStatus: String?
+
+    enum TasteScope: String, CaseIterable { case global, project, oneShot }
 
     var mainComp: Composition? { document.composition(activeCompId) ?? document.mainComposition }
     func layer(_ id: EntityID) -> Layer? { mainComp?.layer(id) }
@@ -614,7 +629,17 @@ final class DocumentModel {
         let request = GenerationRequest(prompt: trimmed, mode: .edit, digest: digest,
                                         playhead: playback.currentTime, history: aiHistory,
                                         snapshot: aiSnapshot(comp), assets: assetAnalyses())
-        let generator: any MotionGenerator = AnthropicClient.fromEnvironment() ?? HeuristicGenerator()
+        // Inject the learned taste (global + project, + a one-shot reference) into the live client.
+        let generator: any MotionGenerator
+        if let key = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"], !key.isEmpty {
+            let oneShot = pendingReference.map { [TasteSynthesizer.exemplar(from: $0, id: "oneshot")] } ?? []
+            generator = AnthropicClient(config: .init(apiKey: key,
+                                                      exemplars: effectiveLibrary(extra: oneShot),
+                                                      taste: effectiveProfile()))
+        } else {
+            generator = HeuristicGenerator()
+        }
+        pendingReference = nil // consumed
         let pipeline = GenerationPipeline(generator: generator)
         do {
             let result = try await pipeline.generate(request, against: document)
@@ -694,6 +719,7 @@ final class DocumentModel {
         activeCompId = doc.mainCompositionId
         playback.seek(to: 0)
         playback.duration = doc.mainComposition?.duration ?? 5
+        loadTaste() // per-project taste follows the opened document
     }
 
     // MARK: Frames (multi-composition canvas)

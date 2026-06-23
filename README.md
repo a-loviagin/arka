@@ -51,8 +51,13 @@ editable vocabulary, and an eval harness gates every prompt/example change. Beca
   `snapshot` + per-asset `AssetAnalysis` (deterministic OKLab palette + dimensions via `ImagePalette`,
   with a `subject` slot for a vision follow-up), surfaced in the user message. The vocabulary reaches
   the live `AnthropicClient` (image block + ASSETS text) and the server path alike.
-- Remaining: an app ingestion UI ("drop reference clips to teach the style") wiring sampler →
-  analyzer → exemplars/profile; a vision `subject` for assets. 214 tests.
+- **Slice 7 (done)** — the **"Teach Style from Clips" ingestion UI** (AI ▸ Teach Style…). A clip is
+  sampled + vision-analyzed once into a `VideoMotionAnalysis`, then stored in a `TasteStore` —
+  **global** (all projects), **per-project** (this document, keyed by id), or a **one-shot** reference
+  for the next prompt only. At generation time the active library = built-in + global + project
+  exemplars (retrieved few-shot) and the aggregate profile (doctrine) are injected into the live
+  client. This is curation/conditioning, **not training** — stores hold only small JSON analyses, and
+  removing a clip removes its influence. Persisted app-side; needs a key to analyze. 218 tests.
 
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence

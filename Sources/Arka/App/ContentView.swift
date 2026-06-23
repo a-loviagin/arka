@@ -40,6 +40,10 @@ struct ContentView: View {
                                     set: { model.exportSheetVisible = $0 })) {
             ExportSheet(model: model)
         }
+        .sheet(isPresented: Binding(get: { model.tasteSheetVisible },
+                                    set: { model.tasteSheetVisible = $0 })) {
+            TasteSheet(model: model)
+        }
     }
 
     private var transportBar: some View {
