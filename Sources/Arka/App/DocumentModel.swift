@@ -94,6 +94,8 @@ final class DocumentModel {
     var projectTaste = TasteStore()
     /// A one-shot reference analyzed for the *next* prompt only (not persisted).
     var pendingReference: VideoMotionAnalysis?
+    /// Vision subject descriptions per asset path, filled best-effort on import (ai-pipeline.md §3).
+    var assetSubjects: [String: String] = [:]
     var tasteSheetVisible = false
     /// Transient UI status during clip ingestion ("Analyzing…", an error, …).
     var tasteStatus: String?
@@ -532,7 +534,18 @@ final class DocumentModel {
         guard (try? store.perform(.batch(commands: cmds, label: "Import Image"), label: "Import Image")) != nil
         else { return nil }
         selection = [layer.id]
+        analyzeAssetSubject(path: asset.path, data: data) // best-effort vision label
         return layer.id
+    }
+
+    /// Fill in a one-line vision `subject` for an asset (cached by path), used in future AI requests.
+    private func analyzeAssetSubject(path: String, data: Data) {
+        guard assetSubjects[path] == nil, let analyzer = ClaudeImageAnalyzer.fromEnvironment() else { return }
+        Task { @MainActor in
+            if let subject = try? await analyzer.subject(of: data, mediaType: "image/png") {
+                assetSubjects[path] = subject
+            }
+        }
     }
 
     /// Import an SVG as editable vector layers: one path shape per `<path>`, parented to a group
@@ -759,7 +772,7 @@ final class DocumentModel {
             guard asset.type == .image else { return nil }
             let size = asset.pixelSize ?? .zero
             let palette = assetBytes[asset.path].map { ImagePalette.hexColors(ofImageData: $0) } ?? []
-            return AssetAnalysis(assetId: "\(asset.id)", palette: palette,
+            return AssetAnalysis(assetId: "\(asset.id)", palette: palette, subject: assetSubjects[asset.path],
                                  width: Int(size.x), height: Int(size.y))
         }
     }

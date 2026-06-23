@@ -67,9 +67,12 @@ public enum SVGPathParser {
                 let c = lastQuadCtrl.map { cur + (cur - $0) } ?? cur
                 quadTo(c, p)
             case "A":
-                // Approximate: consume rx ry rot large sweep x y, line to endpoint.
-                _ = num(); _ = num(); _ = num(); _ = num(); _ = num()
-                guard let p = pt() else { break }; lineTo(p)
+                guard let rx = num(), let ry = num(), let rot = num(),
+                      let large = tokens.nextFlag(), let sweep = tokens.nextFlag(),
+                      let p = pt() else { break }
+                let segs = arcToCubics(from: cur, rx: rx, ry: ry, rotDeg: rot,
+                                       largeArc: large != 0, sweep: sweep != 0, to: p)
+                if segs.isEmpty { lineTo(p) } else { for s in segs { cubicTo(s.c1, s.c2, s.end) } }
             default:
                 _ = num() // unknown command param — skip a token to avoid spinning
             }
@@ -97,6 +100,68 @@ public enum SVGPathParser {
         }
     }
 
+    /// Elliptical arc → cubic-bezier segments (W3C endpoint→center conversion, then ≤90° pieces each
+    /// approximated by a cubic). Empty ⇒ caller should draw a straight line.
+    static func arcToCubics(from p0: Vec2, rx rxIn: Double, ry ryIn: Double, rotDeg: Double,
+                            largeArc: Bool, sweep: Bool, to p1: Vec2) -> [(c1: Vec2, c2: Vec2, end: Vec2)] {
+        var rx = abs(rxIn), ry = abs(ryIn)
+        guard rx > 1e-9, ry > 1e-9, (p0 - p1).length > 1e-9 else { return [] }
+        let phi = rotDeg * .pi / 180
+        let cosP = cos(phi), sinP = sin(phi)
+        // Step 1: midpoint in the rotated frame.
+        let dx = (p0.x - p1.x) / 2, dy = (p0.y - p1.y) / 2
+        let x1 = cosP * dx + sinP * dy
+        let y1 = -sinP * dx + cosP * dy
+        // Step 2: correct out-of-range radii.
+        let lambda = x1 * x1 / (rx * rx) + y1 * y1 / (ry * ry)
+        if lambda > 1 { let s = lambda.squareRoot(); rx *= s; ry *= s }
+        // Step 3: center in the rotated frame.
+        let num = max(0, rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1)
+        let den = rx * rx * y1 * y1 + ry * ry * x1 * x1
+        var coef = den > 0 ? (num / den).squareRoot() : 0
+        if largeArc == sweep { coef = -coef }
+        let cxp = coef * rx * y1 / ry
+        let cyp = coef * -ry * x1 / rx
+        let cx = cosP * cxp - sinP * cyp + (p0.x + p1.x) / 2
+        let cy = sinP * cxp + cosP * cyp + (p0.y + p1.y) / 2
+        // Step 4: start angle + sweep.
+        func ang(_ ux: Double, _ uy: Double, _ vx: Double, _ vy: Double) -> Double {
+            let dot = ux * vx + uy * vy
+            let len = (ux * ux + uy * uy).squareRoot() * (vx * vx + vy * vy).squareRoot()
+            var a = acos(min(max(len > 0 ? dot / len : 0, -1), 1))
+            if ux * vy - uy * vx < 0 { a = -a }
+            return a
+        }
+        let ux = (x1 - cxp) / rx, uy = (y1 - cyp) / ry
+        let theta1 = ang(1, 0, ux, uy)
+        var delta = ang(ux, uy, (-x1 - cxp) / rx, (-y1 - cyp) / ry)
+        if !sweep && delta > 0 { delta -= 2 * .pi }
+        if sweep && delta < 0 { delta += 2 * .pi }
+        // Step 5: split into ≤90° pieces, cubic per piece.
+        let n = max(Int(ceil(abs(delta) / (.pi / 2))), 1)
+        let step = delta / Double(n)
+        let t = 4.0 / 3.0 * tan(step / 4)
+        func point(_ a: Double) -> Vec2 {
+            let x = rx * cos(a), y = ry * sin(a)
+            return Vec2(cx + cosP * x - sinP * y, cy + sinP * x + cosP * y)
+        }
+        func deriv(_ a: Double) -> Vec2 {
+            let x = -rx * sin(a), y = ry * cos(a)
+            return Vec2(cosP * x - sinP * y, sinP * x + cosP * y)
+        }
+        var out: [(Vec2, Vec2, Vec2)] = []
+        var a = theta1
+        for _ in 0..<n {
+            let a2 = a + step
+            let pA = point(a), pB = point(a2)
+            let c1 = pA + deriv(a) * t
+            let c2 = pB - deriv(a2) * t
+            out.append((c1, c2, pB))
+            a = a2
+        }
+        return out
+    }
+
     private enum Token { case command(Character); case number(Double) }
 
     /// Hand-rolled scanner: SVG path data separates tokens by whitespace/commas, lets a sign or a
@@ -108,6 +173,13 @@ public enum SVGPathParser {
         init(_ s: String) { chars = Array(s) }
 
         mutating func pushBack(_ t: Token) { pushed = t }
+
+        /// Arc flags are single 0/1 digits and may be packed without separators ("0 0 1" or "001").
+        mutating func nextFlag() -> Double? {
+            skipSeparators()
+            guard i < chars.count else { return nil }
+            switch chars[i] { case "0": i += 1; return 0; case "1": i += 1; return 1; default: return nil }
+        }
 
         mutating func next() -> Token? {
             if let p = pushed { pushed = nil; return p }

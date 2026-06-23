@@ -17,8 +17,11 @@ content-addressed asset (identical bytes dedup to one asset), texture registered
 layer, one ⌘Z. **SVG** drops/pastes import as **editable vector layers**: a Foundation-only
 `SVGPathParser` turns each `<path d="…">` (M/L/H/V/C/S/Q/T/Z, absolute + relative; quadratics raised
 to cubics) into our cubic-bezier `PathData`, and `SVGImport` pulls each path's fill — one group with a
-path shape layer per `<path>`, fit-scaled at the drop point, fully editable (arcs approximated for
-v1). 228 tests.
+path shape layer per element, fit-scaled at the drop point, fully editable. `SVGImport` also covers
+the basic **primitives** (rect, circle, ellipse, line, polyline, polygon) and per-element
+**`transform`** (translate/scale/rotate/matrix/skew); elliptical **arcs** convert to cubics
+(endpoint→center, ≤90° pieces). Imported image assets also get a one-line **vision `subject`**
+(`ClaudeImageAnalyzer`, cached) so the AI can reason about them by name. 235 tests.
 
 **Phase 27 — AI quality & evals (in progress).** Learning from examples without fine-tuning:
 exemplars become *data the model reads* (retrieval-augmented few-shot), the pattern library is the
