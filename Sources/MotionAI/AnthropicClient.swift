@@ -84,9 +84,19 @@ public struct AnthropicClient: MotionGenerator {
             "system": SystemPrompt.text(exemplars: exemplars, taste: config.taste),
             "tool_choice": ["type": "tool", "name": Self.toolName],
             "tools": [Self.toolDefinition()],
-            "messages": [
-                ["role": "user", "content": SystemPrompt.userMessage(for: request)],
-            ],
+            "messages": [["role": "user", "content": userContent(for: request)]],
+        ]
+    }
+
+    /// The user turn's content: the text message, plus the canvas snapshot as an image block when
+    /// present (edit-mode grounding, §2). Plain string when there's no snapshot.
+    private func userContent(for request: GenerationRequest) -> Any {
+        let text = SystemPrompt.userMessage(for: request)
+        guard let snapshot = request.snapshot else { return text }
+        return [
+            ["type": "text", "text": text],
+            ["type": "image",
+             "source": ["type": "base64", "media_type": "image/jpeg", "data": snapshot.base64EncodedString()]],
         ]
     }
 

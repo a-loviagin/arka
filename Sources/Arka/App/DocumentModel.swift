@@ -610,8 +610,10 @@ final class DocumentModel {
             return
         }
         aiState = .generating
+        // Ground the model: a canvas snapshot at the playhead + cached asset analyses (ai-pipeline §2/§3).
         let request = GenerationRequest(prompt: trimmed, mode: .edit, digest: digest,
-                                        playhead: playback.currentTime, history: aiHistory)
+                                        playhead: playback.currentTime, history: aiHistory,
+                                        snapshot: aiSnapshot(comp), assets: assetAnalyses())
         let generator: any MotionGenerator = AnthropicClient.fromEnvironment() ?? HeuristicGenerator()
         let pipeline = GenerationPipeline(generator: generator)
         do {
@@ -622,6 +624,33 @@ final class DocumentModel {
             aiPanelVisible = false
         } catch {
             aiState = .failed(String(describing: error))
+        }
+    }
+
+    /// Render the active comp at the playhead to a downscaled JPEG for edit-mode grounding (§2).
+    private func aiSnapshot(_ comp: Composition) -> Data? {
+        guard let renderer else { return nil }
+        let scale = min(1.0, 768 / max(comp.size.x, comp.size.y))
+        let w = max(Int(comp.size.x * scale), 1), h = max(Int(comp.size.y * scale), 1)
+        let nodes = RenderTreeBuilder(document: document, textEngine: textEngine, textures: textures,
+                                      video: videoProvider, assetBaseURL: assetBaseURL)
+            .build(compId: comp.id, at: playback.currentTime)
+        let bg = comp.backgroundColor
+        return renderer.renderToImage(nodes: nodes,
+                                      compSize: SIMD2<Float>(Float(comp.size.x), Float(comp.size.y)),
+                                      pixelSize: (w, h), clear: SIMD4<Double>(bg.r, bg.g, bg.b, 1))?
+            .jpegData(quality: 0.7)
+    }
+
+    /// One-time-ish CV analysis (palette + dimensions) of each image asset, sent as text (§3). The
+    /// vision `subject` is a follow-up; palette + size already let the AI match brand colors.
+    private func assetAnalyses() -> [AssetAnalysis] {
+        document.assets.compactMap { asset in
+            guard asset.type == .image else { return nil }
+            let size = asset.pixelSize ?? .zero
+            let palette = assetBytes[asset.path].map { ImagePalette.hexColors(ofImageData: $0) } ?? []
+            return AssetAnalysis(assetId: "\(asset.id)", palette: palette,
+                                 width: Int(size.x), height: Int(size.y))
         }
     }
 

@@ -15,15 +15,23 @@ public struct GenerationRequest: Codable, Sendable {
     public var history: [String]
     /// Set by the repair loop: the specific machine-readable error from the previous attempt.
     public var repairFeedback: String?
+    /// A rendered canvas snapshot at the playhead (JPEG), for `edit` mode — the model grounds spatial
+    /// language ("under the logo") far better with pixels than coordinates (§2).
+    public var snapshot: Data?
+    /// Cached analyses for the document's assets (§3), sent as text alongside the digest.
+    public var assets: [AssetAnalysis]
 
     public init(prompt: String, mode: Mode, digest: DocumentDigest, playhead: TimeInterval = 0,
-                history: [String] = [], repairFeedback: String? = nil) {
+                history: [String] = [], repairFeedback: String? = nil,
+                snapshot: Data? = nil, assets: [AssetAnalysis] = []) {
         self.prompt = prompt
         self.mode = mode
         self.digest = digest
         self.playhead = playhead
         self.history = history
         self.repairFeedback = repairFeedback
+        self.snapshot = snapshot
+        self.assets = assets
     }
 }
 

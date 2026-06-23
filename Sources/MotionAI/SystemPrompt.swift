@@ -128,6 +128,10 @@ public enum SystemPrompt {
         var parts = ["MODE: \(request.mode.rawValue)", "PROMPT: \(request.prompt)",
                      "PLAYHEAD: \(request.playhead)s"]
         if let digestJSON = try? jsonString(request.digest) { parts.append("DOCUMENT:\n\(digestJSON)") }
+        if !request.assets.isEmpty, let assetsJSON = try? jsonString(request.assets) {
+            parts.append("ASSETS (analysis; reference by id):\n\(assetsJSON)")
+        }
+        if request.snapshot != nil { parts.append("CANVAS SNAPSHOT at the playhead is attached as an image.") }
         if !request.history.isEmpty { parts.append("PRIOR PROMPTS: \(request.history.joined(separator: " | "))") }
         if let repair = request.repairFeedback { parts.append("PREVIOUS ATTEMPT FAILED: \(repair)") }
         return parts.joined(separator: "\n\n")

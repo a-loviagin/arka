@@ -17,13 +17,15 @@ public struct GenerationService: Sendable {
     public func generate(document: MotionDocument, compId: EntityID, prompt: String,
                          selection: Set<EntityID> = [], playhead: TimeInterval = 0,
                          history: [String] = [],
-                         mode: GenerationRequest.Mode = .edit) async throws -> GenerationResult {
+                         mode: GenerationRequest.Mode = .edit,
+                         snapshot: Data? = nil, assets: [AssetAnalysis] = []) async throws -> GenerationResult {
         guard let digest = DocumentDigest.summarize(document, compId: compId,
                                                     selection: selection, at: playhead) else {
             throw GenerationError.notConfigured("composition '\(compId)' not found")
         }
         let request = GenerationRequest(prompt: prompt, mode: mode, digest: digest,
-                                        playhead: playhead, history: history)
+                                        playhead: playhead, history: history,
+                                        snapshot: snapshot, assets: assets)
         let pipeline = GenerationPipeline(generator: generator, maxRepairs: maxRepairs)
         return try await pipeline.generate(request, against: document)
     }

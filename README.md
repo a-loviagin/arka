@@ -45,7 +45,14 @@ editable vocabulary, and an eval harness gates every prompt/example change. Beca
   candidate document to frames and signs it — the **render-compare verifier** that scores a
   synthesized reconstruction against a reference clip ("find the command list whose render best
   matches the clip"), and grounds the vision analyzer's labels in real timing.
-- Next: app ingestion UI (drop clips to teach style); asset analysis + canvas-snapshot grounding. 208 tests.
+- **Slice 6 (done)** — **canvas-snapshot grounding** (§2) and **asset analysis** (§3). In edit mode
+  the app renders a downscaled JPEG of the comp at the playhead and sends it as an image block, so
+  the model grounds spatial language ("under the logo") in pixels; `GenerationRequest` carries the
+  `snapshot` + per-asset `AssetAnalysis` (deterministic OKLab palette + dimensions via `ImagePalette`,
+  with a `subject` slot for a vision follow-up), surfaced in the user message. The vocabulary reaches
+  the live `AnthropicClient` (image block + ASSETS text) and the server path alike.
+- Remaining: an app ingestion UI ("drop reference clips to teach the style") wiring sampler →
+  analyzer → exemplars/profile; a vision `subject` for assets. 214 tests.
 
 **Phase 26 — export UI + WebP + GIF craft (done).** A preset-first **export sheet** (export-and-
 format.md §3, File ▸ Export… / ⌘E): segmented format picker (MP4 / ProRes / GIF / WebP / PNG-sequence
