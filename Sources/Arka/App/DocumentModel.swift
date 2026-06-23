@@ -1,6 +1,7 @@
 #if os(macOS)
 import Foundation
 import Metal
+import ImageIO
 import Observation
 import MotionKernel
 import MotionRender
@@ -497,6 +498,38 @@ final class DocumentModel {
         guard let comp = mainComp else { return nil }
         let layer = makeLayer(kind, at: compPoint)
         guard (try? store.perform(.addLayer(layer: layer, compId: comp.id), label: "Add \(layer.name)")) != nil
+        else { return nil }
+        selection = [layer.id]
+        return layer.id
+    }
+
+    /// Import an image (drag-drop or paste) as a content-addressed asset + an image layer, centered at
+    /// `compPoint` (or the comp center), scaled to fit. Dedups identical bytes to one asset. One ⌘Z;
+    /// selects the new layer.
+    @discardableResult
+    func importImage(data: Data, fileExtension: String = "png", at compPoint: Vec2? = nil) -> EntityID? {
+        guard let comp = mainComp,
+              let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+        let size = Vec2(Double(cg.width), Double(cg.height))
+        let candidate = Asset.contentAddressed(id: ids.next("asset"), type: .image, data: data,
+                                               ext: fileExtension, pixelSize: size)
+        let existing = document.assets.first { $0.path == candidate.path }
+        let asset = existing ?? candidate
+        assetBytes[asset.path] = data
+        _ = textures?.register(id: asset.id, cgImage: cg)
+
+        let center = compPoint ?? Vec2(comp.size.x / 2, comp.size.y / 2)
+        // Fit large imports to ~70% of the comp's smaller side so they land usefully on canvas.
+        let fit = min(1.0, (min(comp.size.x, comp.size.y) * 0.7) / max(max(size.x, size.y), 1))
+        let layer = Layer(id: ids.next("layer"), name: "Image", sortKey: topSortKey(),
+                          content: .image(ImageContent(assetId: asset.id)),
+                          transform: Transform(anchor: .static(Vec2(0.5, 0.5)), position: .static(center),
+                                               scale: .static(Vec2(fit, fit))))
+        var cmds: [AnyCommand] = []
+        if existing == nil { cmds.append(.addAsset(asset: asset)) }
+        cmds.append(.addLayer(layer: layer, compId: comp.id))
+        guard (try? store.perform(.batch(commands: cmds, label: "Import Image"), label: "Import Image")) != nil
         else { return nil }
         selection = [layer.id]
         return layer.id

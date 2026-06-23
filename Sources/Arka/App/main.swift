@@ -150,6 +150,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleAIPanel(_ sender: Any?) { model.aiPanelVisible.toggle() }
     @objc func showTasteSheet(_ sender: Any?) { model.tasteSheetVisible = true }
 
+    /// Paste an image from the clipboard onto the canvas as an editable image layer.
+    @objc func paste(_ sender: Any?) {
+        let pb = NSPasteboard.general
+        if let data = pb.data(forType: .png) {
+            model.importImage(data: data, fileExtension: "png"); return
+        }
+        // Most apps put images on the board as TIFF — transcode to PNG for our pipeline.
+        if let images = pb.readObjects(forClasses: [NSImage.self]) as? [NSImage], let img = images.first,
+           let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            model.importImage(data: png, fileExtension: "png")
+        }
+    }
+
     @objc func undo(_ sender: Any?) { model.store.undo() }
     @objc func redo(_ sender: Any?) { model.store.redo() }
 
@@ -239,6 +253,10 @@ func buildMainMenu(target: AppDelegate) {
     del.keyEquivalentModifierMask = []
     del.target = target
     editMenu.addItem(del)
+    editMenu.addItem(.separator())
+    let paste = NSMenuItem(title: "Paste", action: #selector(AppDelegate.paste(_:)), keyEquivalent: "v")
+    paste.target = target
+    editMenu.addItem(paste)
     editItem.submenu = editMenu
 
     let insertItem = NSMenuItem()

@@ -10,6 +10,12 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Asset import (done).** Drag image files from Finder/Desktop (or another app) **onto the canvas** —
+they land as an editable image layer at the drop point — and **⌘V paste** an image from the clipboard
+(PNG, or any TIFF transcoded to PNG) onto the canvas. Both funnel through one `importImage`:
+content-addressed asset (identical bytes dedup to one asset), texture registered, fit-scaled image
+layer, one ⌘Z. (Vector/SVG → editable paths is a follow-up.) 219 tests.
+
 **Phase 27 — AI quality & evals (in progress).** Learning from examples without fine-tuning:
 exemplars become *data the model reads* (retrieval-augmented few-shot), the pattern library is the
 editable vocabulary, and an eval harness gates every prompt/example change. Because the AI emits

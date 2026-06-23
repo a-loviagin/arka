@@ -177,6 +177,30 @@ final class AuthoringTests: XCTestCase {
         XCTAssertNil(s4.gradient, "toggled back off")
     }
 
+    func testImportImageAddsAssetLayerAndDedups() throws {
+        let m = freshModel()
+        let png = DemoDocument.logoPNG()
+        let assetsBefore = m.document.assets.count
+        let layersBefore = m.mainComp!.layers.count
+
+        let id = try XCTUnwrap(m.importImage(data: png, fileExtension: "png", at: Vec2(120, 90)))
+        XCTAssertEqual(m.document.assets.count, assetsBefore + 1, "one new asset")
+        XCTAssertEqual(m.mainComp!.layers.count, layersBefore + 1, "one new image layer")
+        XCTAssertEqual(m.selection, [id], "imported layer is selected")
+        guard case .image(let ic)? = m.layer(id)?.content else { return XCTFail("expected image layer") }
+        XCTAssertNotNil(m.document.asset(ic.assetId), "layer references the new asset")
+        XCTAssertEqual(m.layer(id)?.transform.position.resolve(at: 0), Vec2(120, 90), "placed at the drop point")
+
+        // Re-importing identical bytes dedups the asset but still adds a layer.
+        _ = m.importImage(data: png, fileExtension: "png")
+        XCTAssertEqual(m.document.assets.count, assetsBefore + 1, "identical bytes reuse the content-addressed asset")
+        XCTAssertEqual(m.mainComp!.layers.count, layersBefore + 2)
+
+        // Import is one undo step.
+        m.store.undo()
+        XCTAssertEqual(m.mainComp!.layers.count, layersBefore + 1)
+    }
+
     func testSetBlendMode() throws {
         let m = freshModel()
         let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))

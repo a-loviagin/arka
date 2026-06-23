@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 import MotionKernel
 
 /// Selection gizmo geometry for the selected layer at the playhead, in both comp and view space.
@@ -74,6 +75,9 @@ struct CanvasArea: View {
             .gesture(dragGesture(viewport))
             .simultaneousGesture(zoomGesture(viewSize: geo.size))
             .simultaneousGesture(renameTapGesture(viewSize: geo.size))
+            .onDrop(of: [.image], isTargeted: nil) { providers, location in
+                handleImageDrop(providers, at: location, viewport: viewport); return true
+            }
             .overlay(alignment: .topLeading) { toolbar }
             .overlay(alignment: .bottomTrailing) { zoomControls(viewSize: geo.size) }
         }
@@ -268,6 +272,18 @@ struct CanvasArea: View {
                     }
                 }
             }
+    }
+
+    /// Drop image files/data from Finder/Desktop or other apps onto the canvas → an image layer at
+    /// the drop point (mapped to the active frame's comp space).
+    private func handleImageDrop(_ providers: [NSItemProvider], at location: CGPoint, viewport: Viewport) {
+        let comp = viewport.toComp(Vec2(location.x, location.y))
+        for p in providers where p.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+            p.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                guard let data else { return }
+                DispatchQueue.main.async { model.importImage(data: data, at: comp) }
+            }
+        }
     }
 
     private func zoomGesture(viewSize: CGSize) -> some Gesture {
