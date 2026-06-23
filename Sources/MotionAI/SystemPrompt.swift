@@ -66,7 +66,8 @@ public enum SystemPrompt {
           {"type":"AddEffect","layerId":"<id>","effect":{"id":"<new-id>","type":"blur",
             "params":{"radius":{"kind":"scalar","value":{"static":12}}}}}
           drop-shadow type "shadow" params: offset (vec2), radius (scalar), color (color),
-          opacity (scalar).
+          opacity (scalar). Color-grade type "colorAdjust" params (all scalar): brightness (additive,
+          0 = none), contrast (1 = none), saturation (1 = none, 0 = grayscale), hue (degrees, 0 = none).
           Animate or tweak an effect param via a path: "<layerId>/effects/<effectId>/params/<name>".
         - RemoveEffect: {"type":"RemoveEffect","layerId":"<id>","effectId":"<id>"}
 

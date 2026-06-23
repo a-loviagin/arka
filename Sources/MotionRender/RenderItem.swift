@@ -56,6 +56,9 @@ enum ResolvedEffect {
     case shadow(offset: SIMD2<Float>, radius: Float, color: SIMD4<Float>, opacity: Float)
     /// Blur the composited backdrop behind the layer, masked by the layer's coverage (frosted glass).
     case backgroundBlur(radius: Float)
+    /// Color adjustment on the layer's rasterized result (Tier 3): additive brightness, contrast
+    /// about mid, saturation toward luma, hue rotation in degrees. Neutral = (0, 1, 1, 0).
+    case colorAdjust(brightness: Float, contrast: Float, saturation: Float, hue: Float)
 }
 
 /// What a RenderItem draws. SDF shapes and textured runs (glyphs now, images next) share the

@@ -209,6 +209,14 @@ public struct RenderTreeBuilder {
             case "backgroundBlur":
                 let r = scalar(fx, "radius", at: t) ?? 8
                 return r > 0.01 ? .backgroundBlur(radius: Float(r)) : nil
+            case "colorAdjust":
+                let b = scalar(fx, "brightness", at: t) ?? 0
+                let c = scalar(fx, "contrast", at: t) ?? 1
+                let s = scalar(fx, "saturation", at: t) ?? 1
+                let h = scalar(fx, "hue", at: t) ?? 0
+                let neutral = abs(b) < 1e-4 && abs(c - 1) < 1e-4 && abs(s - 1) < 1e-4 && abs(h) < 1e-4
+                return neutral ? nil : .colorAdjust(brightness: Float(b), contrast: Float(c),
+                                                    saturation: Float(s), hue: Float(h))
             default:
                 return nil // unknown effect types are skipped (forward-compatible)
             }

@@ -319,6 +319,16 @@ final class DocumentModel {
         try? store.perform(.addEffect(layerId: layerId, effect: fx), label: "Add Background Blur")
     }
 
+    func addColorAdjust(to layerId: EntityID) {
+        let fx = Effect(id: ids.next("fx"), type: "colorAdjust", params: [
+            "brightness": .scalar(.static(0)),
+            "contrast": .scalar(.static(1)),
+            "saturation": .scalar(.static(1)),
+            "hue": .scalar(.static(0)),
+        ])
+        try? store.perform(.addEffect(layerId: layerId, effect: fx), label: "Add Color Adjust")
+    }
+
     func removeEffect(_ layerId: EntityID, _ effectId: EntityID) {
         try? store.perform(.removeEffect(layerId: layerId, effectId: effectId), label: "Remove Effect")
     }

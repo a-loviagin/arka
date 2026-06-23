@@ -257,6 +257,35 @@ enum ShaderSource {
         return c * p.opacity;
     }
 
+    // Color adjustment (Tier 3): operate on the layer's premultiplied-linear result. Unpremultiply,
+    // apply brightness/contrast/saturation/hue, re-premultiply. SVG-style hue-rotation matrix.
+    struct ColorAdjustParams { float brightness; float contrast; float saturation; float hue; };
+
+    static inline float3 hueRotate(float3 c, float deg) {
+        float a = deg * 3.14159265 / 180.0;
+        float C = cos(a), S = sin(a);
+        float3 r0 = float3(0.213, 0.715, 0.072) + C * float3(0.787, -0.715, -0.072) + S * float3(-0.213, -0.715, 0.928);
+        float3 r1 = float3(0.213, 0.715, 0.072) + C * float3(-0.213, 0.285, -0.072) + S * float3(0.143, 0.140, -0.283);
+        float3 r2 = float3(0.213, 0.715, 0.072) + C * float3(-0.213, -0.715, 0.928) + S * float3(-0.787, 0.715, 0.072);
+        return float3(dot(c, r0), dot(c, r1), dot(c, r2));
+    }
+
+    fragment float4 coloradjust_fragment(FSOut in [[stage_in]],
+                                         texture2d<float> tex [[texture(0)]],
+                                         sampler samp [[sampler(0)]],
+                                         constant ColorAdjustParams &p [[buffer(0)]]) {
+        float4 c = tex.sample(samp, in.uv);
+        if (c.a <= 0.0001) { return c; }
+        float3 rgb = c.rgb / c.a;                       // unpremultiply
+        rgb += p.brightness;
+        rgb = (rgb - 0.5) * p.contrast + 0.5;
+        float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        rgb = mix(float3(luma), rgb, p.saturation);
+        if (abs(p.hue) > 0.0001) { rgb = hueRotate(rgb, p.hue); }
+        rgb = clamp(rgb, 0.0, 1.0);
+        return float4(rgb * c.a, c.a);                  // re-premultiply
+    }
+
     // Background blur: show the blurred backdrop only where the layer covers (mask = layer alpha),
     // composited "over" the sharp backdrop. The layer's own content is then drawn on top separately.
     fragment float4 backdrop_fragment(FSOut in [[stage_in]],

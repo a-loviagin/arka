@@ -10,6 +10,13 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 28 — Tier-3 effects (in progress).**
+- **Slice 1 (done)** — **color-adjustment** effect (`colorAdjust`): brightness / contrast /
+  saturation / hue, applied as a fullscreen pass on the layer's rasterized result (in linear,
+  unpremultiply→adjust→re-premultiply; SVG-style hue matrix), slotting into the same effect pipeline
+  as blur/shadow. Neutral params resolve to a no-op. Inspector "+ Color" with scrubbable rows; the AI
+  can author it. 237 tests.
+
 **Asset import (done).** Drag image files from Finder/Desktop (or another app) **onto the canvas** —
 they land as an editable image layer at the drop point — and **⌘V paste** an image from the clipboard
 (PNG, or any TIFF transcoded to PNG) onto the canvas. Both funnel through one `importImage`:

@@ -57,6 +57,7 @@ public final class MetalRenderer {
     private let glyphPipeline: MTLRenderPipelineState
     private let imagePipeline: MTLRenderPipelineState
     private let blurPipeline: MTLRenderPipelineState
+    private let colorAdjustPipeline: MTLRenderPipelineState
     private let compositePipeline: MTLRenderPipelineState
     /// Composite pipelines for non-normal blend modes (same shader, different fixed-function blend).
     private let blendPipelines: [BlendMode: MTLRenderPipelineState]
@@ -70,6 +71,8 @@ public final class MetalRenderer {
 
     /// Blur kernel parameters — must match `BlurParams` in Shaders.swift.
     private struct BlurParams { var texelStep: SIMD2<Float>; var sigma: Float; var taps: Int32 }
+    /// Color-adjust parameters — must match `ColorAdjustParams` in Shaders.swift.
+    private struct ColorAdjustParams { var brightness: Float; var contrast: Float; var saturation: Float; var hue: Float }
     /// Composite parameters — must match `CompositeParams` in Shaders.swift.
     private struct CompositeParams {
         var offsetNDC: SIMD2<Float>; var tint: SIMD4<Float>; var opacity: Float; var mode: UInt32
@@ -112,6 +115,7 @@ public final class MetalRenderer {
         self.glyphPipeline = try pipeline("glyph_vertex", "glyph_fragment")
         self.imagePipeline = try pipeline("glyph_vertex", "image_fragment")
         self.blurPipeline = try pipeline("fullscreen_vertex", "blur_fragment", blend: false)
+        self.colorAdjustPipeline = try pipeline("fullscreen_vertex", "coloradjust_fragment", blend: false)
         self.compositePipeline = try pipeline("composite_vertex", "composite_fragment")
 
         // Premultiplied blend states for the non-normal modes (render-engine.md §3). The source is a
@@ -486,6 +490,10 @@ public final class MetalRenderer {
         var result = content
         for fx in effects {
             if case .blur(let radius) = fx { result = blur(result, radius: radius, w: w, h: h, cmd: cmd) }
+            if case .colorAdjust(let br, let ct, let sat, let hue) = fx {
+                result = colorAdjust(result, params: ColorAdjustParams(brightness: br, contrast: ct, saturation: sat, hue: hue),
+                                     w: w, h: h, cmd: cmd)
+            }
         }
         // The layer's own composite carries its blend mode (the shadows behind it stay normal).
         ops.append(CompositeOp(texture: result, offsetNDC: .zero, tint: SIMD4<Float>(1, 1, 1, 1),
@@ -535,6 +543,22 @@ public final class MetalRenderer {
         let taps = Int32(min(max(Int(ceil(Double(radius))), 1), 24))
         blurPass(src: src, dst: tmp, step: SIMD2<Float>(1 / Float(w), 0), sigma: sigma, taps: taps, cmd: cmd)
         blurPass(src: tmp, dst: out, step: SIMD2<Float>(0, 1 / Float(h)), sigma: sigma, taps: taps, cmd: cmd)
+        return out
+    }
+
+    /// Color-adjust pass: one fullscreen draw sampling `src` → a new pooled texture.
+    private func colorAdjust(_ src: MTLTexture, params: ColorAdjustParams, w: Int, h: Int,
+                             cmd: MTLCommandBuffer) -> MTLTexture {
+        guard let out = pool.acquire(width: w, height: h),
+              let enc = cmd.makeRenderCommandEncoder(descriptor: clearedPass(out, .init(0, 0, 0, 0)))
+        else { return src }
+        var p = params
+        enc.setRenderPipelineState(colorAdjustPipeline)
+        enc.setFragmentBytes(&p, length: MemoryLayout<ColorAdjustParams>.stride, index: 0)
+        enc.setFragmentTexture(src, index: 0)
+        enc.setFragmentSamplerState(sampler, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        enc.endEncoding()
         return out
     }
 

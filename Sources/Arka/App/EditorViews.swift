@@ -846,6 +846,7 @@ struct InspectorView: View {
             Button("+ Blur") { model.addBlur(to: layer.id) }.controlSize(.small)
             Button("+ Shadow") { model.addShadow(to: layer.id) }.controlSize(.small)
             Button("+ BG Blur") { model.addBackgroundBlur(to: layer.id) }.controlSize(.small)
+            Button("+ Color") { model.addColorAdjust(to: layer.id) }.controlSize(.small)
             Spacer()
         }
     }
@@ -867,6 +868,11 @@ struct InspectorView: View {
                 if case .vec2(let o)? = fx.params["offset"] { vec2Row("X", "Y", id, "\(base)/offset", o) }
                 if case .color(let c)? = fx.params["color"] { colorRow("Color", id, "\(base)/color", c, defaultColor: .black) }
                 if case .scalar(let op)? = fx.params["opacity"] { scalarRow("Opacity", id, "\(base)/opacity", op, format: "%.2f", sensitivity: 0.01) }
+            case "colorAdjust":
+                if case .scalar(let v)? = fx.params["brightness"] { scalarRow("Bright", id, "\(base)/brightness", v, format: "%.2f", sensitivity: 0.01) }
+                if case .scalar(let v)? = fx.params["contrast"] { scalarRow("Contrast", id, "\(base)/contrast", v, format: "%.2f", sensitivity: 0.01) }
+                if case .scalar(let v)? = fx.params["saturation"] { scalarRow("Saturate", id, "\(base)/saturation", v, format: "%.2f", sensitivity: 0.01) }
+                if case .scalar(let v)? = fx.params["hue"] { scalarRow("Hue", id, "\(base)/hue", v, format: "%.0f", sensitivity: 1) }
             default: EmptyView()
             }
         }
