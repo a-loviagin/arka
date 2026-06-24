@@ -26,6 +26,47 @@ struct ArkaServer {
         let router = Router()
         router.get("/health") { _, _ in "ok" }
 
+        // MARK: Playback-level review (multiplayer.md) — share + comment + web viewer.
+        let shares = ShareStore()
+
+        router.post("/share") { request, _ -> Response in
+            let buffer = try await request.body.collect(upTo: 32 * 1024 * 1024)
+            let upload: ShareUpload
+            do { upload = try JSONDecoder().decode(ShareUpload.self, from: Data(buffer: buffer)) }
+            catch { throw HTTPError(.badRequest, message: "invalid share body: \(error)") }
+            let id = await shares.create(upload)
+            return try jsonResponse(["id": id, "viewer": "/v/\(id)"], status: .ok)
+        }
+        router.get("/share/:id") { _, context -> Response in
+            guard let id = context.parameters.get("id"), let meta = await shares.meta(id)
+            else { throw HTTPError(.notFound) }
+            return try jsonResponse(meta, status: .ok)
+        }
+        router.get("/share/:id/lottie") { _, context -> Response in
+            guard let id = context.parameters.get("id"), let json = await shares.lottie(id)
+            else { throw HTTPError(.notFound) }
+            var headers = HTTPFields(); headers[.contentType] = "application/json"
+            return Response(status: .ok, headers: headers, body: ResponseBody(byteBuffer: ByteBuffer(string: json)))
+        }
+        router.get("/share/:id/comments") { _, context -> Response in
+            guard let id = context.parameters.get("id"), await shares.meta(id) != nil
+            else { throw HTTPError(.notFound) }
+            return try jsonResponse(await shares.comments(id), status: .ok)
+        }
+        router.post("/share/:id/comments") { request, context -> Response in
+            guard let id = context.parameters.get("id") else { throw HTTPError(.badRequest) }
+            let buffer = try await request.body.collect(upTo: 256 * 1024)
+            let draft = try JSONDecoder().decode(ReviewComment.self, from: Data(buffer: buffer))
+            guard let saved = await shares.addComment(id, draft) else { throw HTTPError(.notFound) }
+            return try jsonResponse(saved, status: .ok)
+        }
+        router.get("/v/:id") { _, context -> Response in
+            guard let id = context.parameters.get("id"), await shares.meta(id) != nil
+            else { throw HTTPError(.notFound) }
+            var headers = HTTPFields(); headers[.contentType] = "text/html; charset=utf-8"
+            return Response(status: .ok, headers: headers, body: ResponseBody(byteBuffer: ByteBuffer(string: ReviewViewer.html)))
+        }
+
         router.post("/generate") { request, context -> Response in
             let buffer = try await request.body.collect(upTo: 8 * 1024 * 1024)
             let data = Data(buffer: buffer)

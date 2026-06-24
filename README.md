@@ -10,6 +10,20 @@ web/server port a port rather than a rewrite.
 
 ## Status
 
+**Phase 29 — multiplayer review (in progress).** Playback-level review (multiplayer.md "the killer
+collab feature"): a creator shares a board/frame; a viewer plays it on the web and leaves comments
+anchored to a timeline moment + a board pin; the creator sees them back on the timeline.
+- **Slice 1 (done)** — review model + store (`MotionKernel`): `ReviewComment` (time + optional pin +
+  author/text, lenient decode for web clients), `ShareMeta`/`ShareUpload`, and an actor `ShareStore`
+  (create/fetch/comment, injectable clock+id for deterministic tests).
+- **Slice 2 (done)** — `ArkaServer` endpoints (`POST /share`, `GET /share/:id` + `/lottie` +
+  `/comments`, `POST /share/:id/comments`) and a static **web viewer** at `/v/:id` that plays the
+  shared **Lottie** with lottie-web (real scrubbable timeline), and lets a viewer comment at the
+  current time + drop a board pin. Reuses Phase 25's Lottie export — no renderer port. Verified
+  end-to-end via curl.
+- Next: macOS "Share for Review…" (export Lottie + upload) and a creator review panel (fetch
+  comments → click to seek + show the pin). 245 tests.
+
 **Phase 28 — Tier-3 effects (in progress).**
 - **Slice 1 (done)** — **color-adjustment** effect (`colorAdjust`): brightness / contrast /
   saturation / hue, applied as a fullscreen pass on the layer's rasterized result (in linear,
