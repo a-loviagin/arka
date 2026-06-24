@@ -286,6 +286,20 @@ enum ShaderSource {
         return float4(rgb * c.a, c.a);                  // re-premultiply
     }
 
+    // Track matte (Tier 3): mask `content` by `matte` — alpha or luminance, optionally inverted.
+    // Both are premultiplied-linear, target-aligned. kind: 0 alpha, 1 alphaInv, 2 luma, 3 lumaInv.
+    fragment float4 matte_fragment(FSOut in [[stage_in]],
+                                   texture2d<float> content [[texture(0)]],
+                                   texture2d<float> matte [[texture(1)]],
+                                   sampler samp [[sampler(0)]],
+                                   constant uint &kind [[buffer(0)]]) {
+        float4 c = content.sample(samp, in.uv);
+        float4 m = matte.sample(samp, in.uv);
+        float factor = (kind == 0u || kind == 1u) ? m.a : dot(m.rgb, float3(0.2126, 0.7152, 0.0722));
+        if (kind == 1u || kind == 3u) { factor = 1.0 - factor; }
+        return c * factor; // premultiplied: scales rgb and a together
+    }
+
     // Background blur: show the blurred backdrop only where the layer covers (mask = layer alpha),
     // composited "over" the sharp backdrop. The layer's own content is then drawn on top separately.
     fragment float4 backdrop_fragment(FSOut in [[stage_in]],

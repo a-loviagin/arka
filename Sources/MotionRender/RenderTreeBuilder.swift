@@ -90,17 +90,51 @@ public struct RenderTreeBuilder {
     private func buildSubtree(_ layers: [Layer], compId: EntityID, at t: TimeInterval,
                               visiting: Set<EntityID>, evById: [EntityID: EvaluatedLayer],
                               childrenOf: [EntityID: [Layer]], enclosingIso: Double) -> [RenderNode] {
-        var nodes: [RenderNode] = []
-        for layer in layers {
-            guard let ev = evById[layer.id], ev.active, ev.opacity > 0.001 else { continue }
-            let world = simd_float3x3(ev.world)
-            let rel = Float(ev.opacity / max(enclosingIso, 1e-6))
-            let effects = resolveEffects(layer.effects, at: t)
+        // Build each layer's nodes, then fold track mattes: a matted layer consumes the layer
+        // directly above it (its alpha/luma becomes the matte).
+        let built = layers.map { (layer: $0, nodes: nodesFor($0, compId: compId, at: t, visiting: visiting,
+                                                             evById: evById, childrenOf: childrenOf,
+                                                             enclosingIso: enclosingIso)) }
+        var out: [RenderNode] = []
+        var i = 0
+        while i < built.count {
+            let entry = built[i]
+            if let matte = entry.layer.trackMatte, !entry.nodes.isEmpty,
+               i + 1 < built.count, !built[i + 1].nodes.isEmpty {
+                out.append(.matte(MatteNode(content: entry.nodes, matte: built[i + 1].nodes,
+                                            kind: matteKind(matte))))
+                i += 2 // the matte layer above is consumed
+            } else {
+                out.append(contentsOf: entry.nodes)
+                i += 1
+            }
+        }
+        return out
+    }
 
-            switch layer.content {
+    private func matteKind(_ m: TrackMatte) -> MatteKind {
+        switch m {
+        case .alpha: return .alpha
+        case .alphaInverted: return .alphaInverted
+        case .luma: return .luma
+        case .lumaInverted: return .lumaInverted
+        }
+    }
+
+    /// The render nodes for a single layer (empty if inactive / nothing to draw).
+    private func nodesFor(_ layer: Layer, compId: EntityID, at t: TimeInterval, visiting: Set<EntityID>,
+                          evById: [EntityID: EvaluatedLayer], childrenOf: [EntityID: [Layer]],
+                          enclosingIso: Double) -> [RenderNode] {
+        guard let ev = evById[layer.id], ev.active, ev.opacity > 0.001 else { return [] }
+        let world = simd_float3x3(ev.world)
+        let rel = Float(ev.opacity / max(enclosingIso, 1e-6))
+        let effects = resolveEffects(layer.effects, at: t)
+        var nodes: [RenderNode] = []
+
+        switch layer.content {
             case .shape(let shape):
                 if shape.geometry == .path {
-                    guard let p = shape.path else { continue }
+                    guard let p = shape.path else { return [] }
                     var meshes: [PathMesh] = []
                     let grad = shape.gradient.map { resolveGradient($0, at: t) }
                     if grad != nil || (shape.fillColor?.resolve(at: t).a ?? 0) > 0.001,
@@ -120,26 +154,26 @@ public struct RenderTreeBuilder {
                             meshes.append(strokeMesh) // drawn above the fill
                         }
                     }
-                    guard !meshes.isEmpty else { continue }
+                    guard !meshes.isEmpty else { return [] }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                                   content: .path(meshes), effects: effects, blendMode: layer.blendMode)))
                 } else {
-                    guard let resolved = resolveShape(shape, at: t) else { continue }
+                    guard let resolved = resolveShape(shape, at: t) else { return [] }
                     nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                                   content: .shape(resolved), effects: effects, blendMode: layer.blendMode)))
                 }
             case .text(let text):
-                guard let engine = textEngine else { continue }
+                guard let engine = textEngine else { return [] }
                 let fontSize = text.fontSize.resolve(at: t)
                 let tracking = text.tracking?.resolve(at: t) ?? 0
                 let lineHeight = text.lineHeight?.resolve(at: t) ?? 0
                 let fill = SIMD4<Float>(text.fillColor.resolve(at: t))
                 guard let run = engine.run(for: text, fontSize: fontSize, tracking: tracking,
-                                           lineHeight: lineHeight, fill: fill) else { continue }
+                                           lineHeight: lineHeight, fill: fill) else { return [] }
                 nodes.append(.leaf(RenderItem(world: world, opacity: rel,
                                               content: .glyphRun(run), effects: effects, blendMode: layer.blendMode)))
             case .image(let image):
-                guard let texture = textures?.texture(forAssetId: image.assetId) else { continue }
+                guard let texture = textures?.texture(forAssetId: image.assetId) else { return [] }
                 let size = document.asset(image.assetId)?.pixelSize ?? Vec2(Double(texture.width),
                                                                             Double(texture.height))
                 nodes.append(.leaf(RenderItem(world: world, opacity: rel,
@@ -149,7 +183,7 @@ public struct RenderTreeBuilder {
                                               effects: effects, blendMode: layer.blendMode)))
             case .precomp(let pre):
                 guard !visiting.contains(compId),
-                      let sub = document.composition(pre.compositionId) else { continue }
+                      let sub = document.composition(pre.compositionId) else { return [] }
                 let children = buildNodes(compId: pre.compositionId, at: t,
                                           visiting: visiting.union([compId]))
                 nodes.append(.precomp(Precomp(
@@ -157,9 +191,9 @@ public struct RenderTreeBuilder {
                     compSize: SIMD2<Float>(Float(sub.size.x), Float(sub.size.y)),
                     children: children)))
             case .video(let v):
-                guard let provider = video, let asset = document.asset(v.assetId) else { continue }
+                guard let provider = video, let asset = document.asset(v.assetId) else { return [] }
                 let url = assetURL(asset)
-                guard let texture = provider.texture(for: v, asset: asset, assetURL: url, at: t) else { continue }
+                guard let texture = provider.texture(for: v, asset: asset, assetURL: url, at: t) else { return [] }
                 let size = asset.pixelSize ?? provider.pixelSize(for: asset, assetURL: url)
                     ?? Vec2(Double(texture.width), Double(texture.height))
                 nodes.append(.leaf(RenderItem(world: world, opacity: rel,
@@ -169,7 +203,7 @@ public struct RenderTreeBuilder {
                                               effects: effects, blendMode: layer.blendMode)))
             case .group, .null:
                 let kids = childrenOf[layer.id] ?? []
-                guard !kids.isEmpty else { continue }
+                guard !kids.isEmpty else { return [] }
                 let ownOpacity = layer.transform.opacity.resolve(at: t)
                 let isolate = ownOpacity < 0.999 || !effects.isEmpty
                 if isolate {
@@ -188,7 +222,6 @@ public struct RenderTreeBuilder {
                                                           enclosingIso: enclosingIso))
                 }
             }
-        }
         return nodes
     }
 

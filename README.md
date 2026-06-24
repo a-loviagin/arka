@@ -15,7 +15,14 @@ web/server port a port rather than a rewrite.
   saturation / hue, applied as a fullscreen pass on the layer's rasterized result (in linear,
   unpremultiply→adjust→re-premultiply; SVG-style hue matrix), slotting into the same effect pipeline
   as blur/shadow. Neutral params resolve to a no-op. Inspector "+ Color" with scrubbable rows; the AI
-  can author it. 237 tests.
+  can author it.
+- **Slice 2 (done)** — **track mattes** (alpha / luma, + inverted): a layer is masked by the layer
+  directly above it (`Layer.trackMatte` + `SetLayerTrackMatte`). The builder folds the matted layer +
+  its matte into one `MatteNode`; the renderer rasterizes both target-aligned and multiplies the
+  content's coverage by the matte's alpha or luminance (inverted flips it) — the matte layer isn't
+  drawn on its own. Inspector "Matte" picker per layer. 240 tests.
+- Remaining Tier-3 (own future phases): displacement/noise, expressions/bindings, particles,
+  audio-reactive.
 
 **Asset import (done).** Drag image files from Finder/Desktop (or another app) **onto the canvas** —
 they land as an editable image layer at the drop point — and **⌘V paste** an image from the clipboard

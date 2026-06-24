@@ -908,6 +908,18 @@ struct InspectorView: View {
                     ForEach(BlendMode.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }.labelsHidden().frame(width: 104).help("Blend mode")
             }
+            HStack {
+                Text("Matte").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Picker("", selection: Binding(get: { layer.trackMatte },
+                                              set: { model.setTrackMatte(layer.id, $0) })) {
+                    Text("None").tag(TrackMatte?.none)
+                    Text("Alpha").tag(TrackMatte?.some(.alpha))
+                    Text("Alpha Inv").tag(TrackMatte?.some(.alphaInverted))
+                    Text("Luma").tag(TrackMatte?.some(.luma))
+                    Text("Luma Inv").tag(TrackMatte?.some(.lumaInverted))
+                }.labelsHidden().frame(width: 104).help("Track matte — masked by the layer above")
+            }
             Slider(value: Binding(
                 get: { layer.transform.opacity.resolve(at: model.playback.currentTime) },
                 set: { if let txn = opacityTxn { model.setOpacity(layer.id, to: $0, within: txn) } }

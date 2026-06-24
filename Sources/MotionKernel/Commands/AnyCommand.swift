@@ -25,6 +25,7 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
     case setLayerName(layerId: EntityID, name: String)
     case setContent(layerId: EntityID, content: LayerContent)
     case setLayerBlendMode(layerId: EntityID, blendMode: BlendMode)
+    case setLayerTrackMatte(layerId: EntityID, matte: TrackMatte?)
     case setCompositionSetting(compId: EntityID, setting: CompositionSetting)
     /// Frames are compositions (editor-ui board): add or remove a whole composition. The main
     /// composition can't be removed (every document keeps at least one frame).
@@ -112,7 +113,7 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
                 throw CommandError.effectNotFound(effectId)
             }
         case .setLayerName(let layerId, _), .setContent(let layerId, _),
-             .setLayerBlendMode(let layerId, _):
+             .setLayerBlendMode(let layerId, _), .setLayerTrackMatte(let layerId, _):
             _ = try locateLayer(layerId, in: doc)
         case .addComposition(let composition):
             if doc.composition(composition.id) != nil { throw CommandError.duplicateID(composition.id) }
@@ -202,6 +203,9 @@ public enum AnyCommand: Command, Codable, Sendable, Equatable {
         case .setLayerBlendMode(let layerId, let blendMode):
             let (ci, li) = try locateLayer(layerId, in: doc)
             doc.compositions[ci].layers[li].blendMode = blendMode
+        case .setLayerTrackMatte(let layerId, let matte):
+            let (ci, li) = try locateLayer(layerId, in: doc)
+            doc.compositions[ci].layers[li].trackMatte = matte
         case .addComposition(let composition):
             doc.compositions.append(composition)
         case .removeComposition(let compId):

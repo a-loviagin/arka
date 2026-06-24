@@ -179,6 +179,19 @@ final class CommandTests: XCTestCase {
         ) { XCTAssertEqual($0 as? CommandError, .effectNotFound("ghost")) }
     }
 
+    func testSetTrackMatteAppliesUndoesAndRoundTrips() throws {
+        let store = CommandStore(document: Fixtures.sampleDocument())
+        try store.perform(.setLayerTrackMatte(layerId: "layer_logo", matte: .luma), label: "Matte")
+        XCTAssertEqual(store.document.composition("comp_main")?.layer("layer_logo")?.trackMatte, .luma)
+        store.undo()
+        XCTAssertNil(store.document.composition("comp_main")?.layer("layer_logo")?.trackMatte)
+
+        let cmds: [AnyCommand] = [.setLayerTrackMatte(layerId: "l", matte: .alphaInverted),
+                                  .setLayerTrackMatte(layerId: "l", matte: nil)]
+        let data = try JSONEncoder().encode(cmds)
+        XCTAssertEqual(try JSONDecoder().decode([AnyCommand].self, from: data), cmds)
+    }
+
     // MARK: Compositions (frames)
 
     private func frame(_ id: EntityID = "comp_two") -> Composition {

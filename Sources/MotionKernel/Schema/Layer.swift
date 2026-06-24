@@ -6,6 +6,13 @@ public enum BlendMode: String, Codable, Sendable, Equatable, CaseIterable {
     case normal, multiply, screen, add, lighten
 }
 
+/// Track matte (properties-and-commands.md §Tier 3): this layer is masked by the layer directly
+/// above it in render order — by the matte's alpha or luminance, optionally inverted. The matte
+/// layer is consumed (not drawn on its own).
+public enum TrackMatte: String, Codable, Sendable, Equatable, CaseIterable {
+    case alpha, alphaInverted, luma, lumaInverted
+}
+
 /// A layer in a composition (motion-document-schema.md §3).
 ///
 /// Grouping is **flat** — prefer a single layer array + `parentId` over nested arrays. Flat lists
@@ -26,6 +33,8 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
     public var content: LayerContent
     public var effects: [Effect]
     public var blendMode: BlendMode
+    /// When set, this layer is matted by the layer directly above it (omitted-default nil).
+    public var trackMatte: TrackMatte?
 
     public init(id: EntityID, name: String, sortKey: SortKey,
                 content: LayerContent,
@@ -34,7 +43,8 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
                 inPoint: TimeInterval = 0, outPoint: TimeInterval = .infinity,
                 transform: Transform = Transform(),
                 effects: [Effect] = [],
-                blendMode: BlendMode = .normal) {
+                blendMode: BlendMode = .normal,
+                trackMatte: TrackMatte? = nil) {
         self.id = id
         self.name = name
         self.sortKey = sortKey
@@ -47,10 +57,11 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
         self.transform = transform
         self.effects = effects
         self.blendMode = blendMode
+        self.trackMatte = trackMatte
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, parentId, sortKey, visible, locked, inPoint, outPoint, transform, content, effects, blendMode
+        case id, name, parentId, sortKey, visible, locked, inPoint, outPoint, transform, content, effects, blendMode, trackMatte
     }
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -66,6 +77,7 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
         content = try c.decode(LayerContent.self, forKey: .content)
         effects = try c.decodeIfPresent([Effect].self, forKey: .effects) ?? []
         blendMode = try c.decodeIfPresent(BlendMode.self, forKey: .blendMode) ?? .normal
+        trackMatte = try c.decodeIfPresent(TrackMatte.self, forKey: .trackMatte)
     }
     public func encode(to encoder: any Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -81,5 +93,6 @@ public struct Layer: Codable, Sendable, Equatable, Identifiable {
         try c.encode(content, forKey: .content)
         if !effects.isEmpty { try c.encode(effects, forKey: .effects) }
         if blendMode != .normal { try c.encode(blendMode, forKey: .blendMode) }
+        try c.encodeIfPresent(trackMatte, forKey: .trackMatte)
     }
 }

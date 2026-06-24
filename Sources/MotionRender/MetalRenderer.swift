@@ -58,6 +58,7 @@ public final class MetalRenderer {
     private let imagePipeline: MTLRenderPipelineState
     private let blurPipeline: MTLRenderPipelineState
     private let colorAdjustPipeline: MTLRenderPipelineState
+    private let mattePipeline: MTLRenderPipelineState
     private let compositePipeline: MTLRenderPipelineState
     /// Composite pipelines for non-normal blend modes (same shader, different fixed-function blend).
     private let blendPipelines: [BlendMode: MTLRenderPipelineState]
@@ -116,6 +117,7 @@ public final class MetalRenderer {
         self.imagePipeline = try pipeline("glyph_vertex", "image_fragment")
         self.blurPipeline = try pipeline("fullscreen_vertex", "blur_fragment", blend: false)
         self.colorAdjustPipeline = try pipeline("fullscreen_vertex", "coloradjust_fragment", blend: false)
+        self.mattePipeline = try pipeline("fullscreen_vertex", "matte_fragment", blend: false)
         self.compositePipeline = try pipeline("composite_vertex", "composite_fragment")
 
         // Premultiplied blend states for the non-normal modes (render-engine.md §3). The source is a
@@ -299,9 +301,34 @@ public final class MetalRenderer {
                 let sub = resolveTree(g.children, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
                 encodeMain(sub, proj: proj, clear: SIMD4<Double>(0, 0, 0, 0), target: tex, cmd: cmd, transient: &transient)
                 out.append(.group(texture: tex, opacity: g.opacity, effects: g.effects, blend: g.blendMode))
+            case .matte(let m):
+                guard let contentTex = pool.acquire(width: w, height: h),
+                      let matteTex = pool.acquire(width: w, height: h),
+                      let outTex = pool.acquire(width: w, height: h) else { continue }
+                let cSub = resolveTree(m.content, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
+                encodeMain(cSub, proj: proj, clear: SIMD4<Double>(0, 0, 0, 0), target: contentTex, cmd: cmd, transient: &transient)
+                let mSub = resolveTree(m.matte, proj: proj, w: w, h: h, cmd: cmd, transient: &transient)
+                encodeMain(mSub, proj: proj, clear: SIMD4<Double>(0, 0, 0, 0), target: matteTex, cmd: cmd, transient: &transient)
+                applyMatte(content: contentTex, matte: matteTex, kind: m.kind, target: outTex, cmd: cmd)
+                // The matted result composites fullscreen like a group.
+                out.append(.group(texture: outTex, opacity: 1, effects: [], blend: .normal))
             }
         }
         return out
+    }
+
+    /// Mask `content` by `matte` (alpha or luminance, optionally inverted) into `target`.
+    private func applyMatte(content: MTLTexture, matte: MTLTexture, kind: MatteKind,
+                            target: MTLTexture, cmd: MTLCommandBuffer) {
+        guard let enc = cmd.makeRenderCommandEncoder(descriptor: clearedPass(target, .init(0, 0, 0, 0))) else { return }
+        var k: UInt32 = { switch kind { case .alpha: 0; case .alphaInverted: 1; case .luma: 2; case .lumaInverted: 3 } }()
+        enc.setRenderPipelineState(mattePipeline)
+        enc.setFragmentTexture(content, index: 0)
+        enc.setFragmentTexture(matte, index: 1)
+        enc.setFragmentSamplerState(sampler, index: 0)
+        enc.setFragmentBytes(&k, length: MemoryLayout<UInt32>.stride, index: 0)
+        enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        enc.endEncoding()
     }
 
     /// Encode effect/group pre-passes + the main pass for resolved nodes into `target`. Does not

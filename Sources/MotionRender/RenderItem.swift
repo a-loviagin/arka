@@ -11,6 +11,17 @@ public enum RenderNode {
     case leaf(RenderItem)
     case precomp(Precomp)
     case group(GroupNode)
+    case matte(MatteNode)
+}
+
+/// Track matte (properties-and-commands.md §Tier 3): `content` is masked by `matte` — the renderer
+/// rasterizes both into target-size textures (same projection → aligned), then multiplies content's
+/// alpha by the matte's alpha or luminance (inverted variants flip it). The matte is not drawn.
+public enum MatteKind { case alpha, alphaInverted, luma, lumaInverted }
+public struct MatteNode {
+    var content: [RenderNode]
+    var matte: [RenderNode]
+    var kind: MatteKind
 }
 
 /// An isolation group (render-engine.md §3): its children are composited into one intermediate,

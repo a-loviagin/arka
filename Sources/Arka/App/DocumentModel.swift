@@ -254,6 +254,11 @@ final class DocumentModel {
         try? store.perform(.setLayerBlendMode(layerId: id, blendMode: mode), label: "Blend Mode")
     }
 
+    func setTrackMatte(_ id: EntityID, _ matte: TrackMatte?) {
+        guard layer(id)?.trackMatte != matte else { return }
+        try? store.perform(.setLayerTrackMatte(layerId: id, matte: matte), label: "Track Matte")
+    }
+
     func setImageFit(_ id: EntityID, _ fit: FitMode) {
         guard case .image(var ic)? = layer(id)?.content, ic.fit != fit else { return }
         ic.fit = fit
