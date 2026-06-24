@@ -21,8 +21,11 @@ anchored to a timeline moment + a board pin; the creator sees them back on the t
   shared **Lottie** with lottie-web (real scrubbable timeline), and lets a viewer comment at the
   current time + drop a board pin. Reuses Phase 25's Lottie export — no renderer port. Verified
   end-to-end via curl.
-- Next: macOS "Share for Review…" (export Lottie + upload) and a creator review panel (fetch
-  comments → click to seek + show the pin). 245 tests.
+- **Slice 3 (done)** — the macOS half: **Share ▸ Share Board / Current Frame for Review…** exports
+  the scope to Lottie (the whole board is synthesized as one comp of per-frame precomps), uploads it,
+  copies the viewer link, and opens the **Review** panel. The panel fetches the viewers' comments;
+  clicking one **seeks the playhead** to its time, focuses the shared frame, and drops the comment's
+  **pin on the canvas** (mapped back to board space). 246 tests. Phase 29 review loop complete.
 
 **Phase 28 — Tier-3 effects (in progress).**
 - **Slice 1 (done)** — **color-adjustment** effect (`colorAdjust`): brightness / contrast /

@@ -102,6 +102,19 @@ final class DocumentModel {
 
     enum TasteScope: String, CaseIterable { case global, project, oneShot }
 
+    // MARK: Review sharing (multiplayer.md — playback-level review)
+
+    /// Last share's viewer URL + id, the scope that was shared, fetched comments, and the pin (in
+    /// board space) of the comment the creator is currently looking at.
+    var lastShareURL: String?
+    var lastShareID: String?
+    /// nil ⇒ the whole board was shared; otherwise the shared frame's composition id.
+    var sharedFrameID: EntityID?
+    var reviewComments: [ReviewComment] = []
+    var activeReviewPin: Vec2?
+    var reviewPanelVisible = false
+    var shareStatus: String?
+
     var mainComp: Composition? { document.composition(activeCompId) ?? document.mainComposition }
     func layer(_ id: EntityID) -> Layer? { mainComp?.layer(id) }
     var selectedLayer: Layer? { selection.first.flatMap { layer($0) } }

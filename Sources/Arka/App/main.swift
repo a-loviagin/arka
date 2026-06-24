@@ -150,6 +150,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func toggleAIPanel(_ sender: Any?) { model.aiPanelVisible.toggle() }
     @objc func showTasteSheet(_ sender: Any?) { model.tasteSheetVisible = true }
 
+    // MARK: Review sharing (multiplayer.md)
+
+    @objc func shareBoard(_ sender: Any?) { Task { await model.shareForReview(board: true); presentShareResult() } }
+    @objc func shareFrame(_ sender: Any?) { Task { await model.shareForReview(board: false); presentShareResult() } }
+    @objc func toggleReviewPanel(_ sender: Any?) {
+        model.reviewPanelVisible.toggle()
+        if model.reviewPanelVisible { Task { await model.fetchReviewComments() } }
+    }
+
+    private func presentShareResult() {
+        guard let url = model.lastShareURL else {
+            let a = NSAlert(); a.messageText = model.shareStatus ?? "Share failed"; a.runModal(); return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url, forType: .string)
+        let alert = NSAlert()
+        alert.messageText = "Shared for review"
+        alert.informativeText = url + "\n\nLink copied to the clipboard."
+        alert.addButton(withTitle: "Open in Browser")
+        alert.addButton(withTitle: "OK")
+        if alert.runModal() == .alertFirstButtonReturn, let u = URL(string: url) { NSWorkspace.shared.open(u) }
+        model.reviewPanelVisible = true
+    }
+
     /// Paste an image from the clipboard onto the canvas as an editable image layer.
     @objc func paste(_ sender: Any?) {
         let pb = NSPasteboard.general
@@ -289,6 +313,19 @@ func buildMainMenu(target: AppDelegate) {
     teach.target = target
     aiMenu.addItem(teach)
     aiItem.submenu = aiMenu
+
+    let shareItem = NSMenuItem()
+    mainMenu.addItem(shareItem)
+    let shareMenu = NSMenu(title: "Share")
+    func addShare(_ title: String, _ action: Selector) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: ""); item.target = target
+        shareMenu.addItem(item)
+    }
+    addShare("Share Board for Review…", #selector(AppDelegate.shareBoard(_:)))
+    addShare("Share Current Frame for Review…", #selector(AppDelegate.shareFrame(_:)))
+    shareMenu.addItem(.separator())
+    addShare("Review Comments", #selector(AppDelegate.toggleReviewPanel(_:)))
+    shareItem.submenu = shareMenu
 
     NSApp.mainMenu = mainMenu
 }

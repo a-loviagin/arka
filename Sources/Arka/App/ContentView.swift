@@ -35,6 +35,13 @@ struct ContentView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if model.reviewPanelVisible {
+                ReviewPanel(model: model).padding(12)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.reviewPanelVisible)
         .animation(.easeOut(duration: 0.12), value: model.aiPanelVisible)
         .sheet(isPresented: Binding(get: { model.exportSheetVisible },
                                     set: { model.exportSheetVisible = $0 })) {

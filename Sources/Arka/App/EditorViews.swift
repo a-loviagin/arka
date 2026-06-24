@@ -207,9 +207,9 @@ struct CanvasArea: View {
     /// Outline + name label per frame, drawn over the rendered board, plus corner resize handles on
     /// the active frame. Non-interactive — move/resize/focus happen through the drag gesture; rename
     /// through the double-click gesture + `renameOverlay`.
-    @ViewBuilder
     private func frameChrome(viewSize: CGSize) -> some View {
         let bv = boardViewport(for: viewSize)
+        return ZStack {
         ForEach(model.frames, id: \.id) { frame in
             let isActive = frame.id == model.activeCompId
             let tl = bv.toView(frame.boardPosition)
@@ -239,6 +239,15 @@ struct CanvasArea: View {
                     }
                 }
             }
+        }
+        // Review pin for the comment the creator is viewing (board-space → view).
+        if let pin = model.activeReviewPin {
+            let p = bv.toView(pin)
+            Image(systemName: "mappin.circle.fill")
+                .font(.system(size: 22)).foregroundStyle(.orange)
+                .shadow(radius: 2)
+                .position(x: p.x, y: p.y - 9)
+        }
         }
         .allowsHitTesting(false)
     }

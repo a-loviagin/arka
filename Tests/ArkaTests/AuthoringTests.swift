@@ -218,6 +218,29 @@ final class AuthoringTests: XCTestCase {
         XCTAssertEqual(m.mainComp!.layers.count, before)
     }
 
+    func testGoToCommentSeeksAndMapsPinToBoardSpace() throws {
+        let m = freshModel()
+        let fid = try XCTUnwrap(m.addFrame(width: 400, height: 300)) // laid out to the right of main
+        let frame = try XCTUnwrap(m.document.composition(fid))
+        m.setActiveFrame(m.document.mainCompositionId)
+
+        // Frame scope: pin is in the frame's comp coords → board space = pin + frame.boardPosition.
+        m.sharedFrameID = fid
+        m.goToComment(ReviewComment(time: 1.5, pin: Vec2(10, 20), author: "v", text: "x"))
+        XCTAssertEqual(m.playback.currentTime, 1.5, accuracy: 1e-6)
+        XCTAssertEqual(m.activeReviewPin, Vec2(10, 20) + frame.boardPosition)
+        XCTAssertEqual(m.activeCompId, fid, "jumped to the shared frame")
+
+        // Board scope: pin is in board-comp coords → board space = pin + board-bounds origin.
+        m.sharedFrameID = nil
+        m.goToComment(ReviewComment(time: 0.5, pin: Vec2(5, 5), author: "v", text: "y"))
+        XCTAssertEqual(m.activeReviewPin, Vec2(5, 5) + m.boardBounds().origin)
+
+        // A comment with no pin clears the canvas marker.
+        m.goToComment(ReviewComment(time: 0.2, author: "v", text: "z"))
+        XCTAssertNil(m.activeReviewPin)
+    }
+
     func testSetBlendMode() throws {
         let m = freshModel()
         let id = try XCTUnwrap(m.createLayer(.rect, at: Vec2(0, 0)))
