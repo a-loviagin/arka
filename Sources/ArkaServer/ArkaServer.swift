@@ -29,6 +29,13 @@ struct ArkaServer {
         // MARK: Playback-level review (multiplayer.md) — share + comment + web viewer.
         let shares = ShareStore()
 
+        // Seed a built-in demo share so `/demo` opens a working review page with no setup.
+        let demoID = await shares.create(ShareUpload(meta: DemoLottie.meta, lottieJSON: DemoLottie.json))
+        router.get("/demo") { _, _ -> Response in
+            var headers = HTTPFields(); headers[.location] = "/v/\(demoID)"
+            return Response(status: .seeOther, headers: headers)
+        }
+
         router.post("/share") { request, _ -> Response in
             let buffer = try await request.body.collect(upTo: 32 * 1024 * 1024)
             let upload: ShareUpload
@@ -91,6 +98,7 @@ struct ArkaServer {
             configuration: .init(address: .hostname("127.0.0.1", port: port),
                                  serverName: "ArkaServer"))
         print("ArkaServer on http://127.0.0.1:\(port) — generator: \(live ? "Anthropic" : "heuristic (offline)")")
+        print("Demo review page: http://127.0.0.1:\(port)/demo")
         try await app.runService()
     }
 
