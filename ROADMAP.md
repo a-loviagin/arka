@@ -26,7 +26,8 @@ Built ✅
 
 To build ◻︎
 - **Closed-loop generation** — generate → render → signature-compare vs the brand's references →
-  pick best / auto-refine. *(S1.1, in progress)*
+  pick best / auto-refine. *(S1.1: `TasteLoop` core ✅ — generator/renderer-agnostic, scored
+  candidates + feedback refine, unit-tested. Next: wire the real Metal `CandidateScorer` in the app.)*
 - Verify the **live vision ingestion** path end-to-end; polish the Style Library UX.
 - **Embedding retrieval** behind the existing interface (replace keyword scoring).
 - **Taste-adherence evals** in CI; a visible "Style: <brand>" indicator on generations.
